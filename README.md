@@ -47,3 +47,13 @@ crm-demo-postgres/
 ├── start.sh # Skripta za pokretanje
 ├── stop.sh # Skripta za zaustavljanje
 └── README.md
+
+### Koraci za inicijalizaciju projekta "from the scratch".
+
+mkdir CRMVueApp && ./setup.sh
+
+cd crm-demo-postgres && ./start.sh
+
+
+
+
