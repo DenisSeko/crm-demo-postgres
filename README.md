@@ -29,31 +29,20 @@ Modern CRM aplikacija izgrađena s Vue.js 3 (frontend) i Express.js (backend) ko
 # Zaustavi aplikaciju  
 ./stop.sh
 
-crm-demo-postgres/
-├── frontend/ # Vue.js 3 frontend aplikacija
-│ ├── src/
-│ │ ├── components/ # Vue komponente
-│ │ ├── App.vue # Glavna komponenta
-│ │ └── main.js # Vue inicijalizacija
-│ ├── package.json
-│ └── vite.config.js
-├── backend/ # Express.js backend server
-│ ├── server.js # Glavni server file
-│ ├── database/
-│ │ └── config.js # PostgreSQL konfiguracija
-│ └── package.json
-├── database/ # SQL skripte i inicijalni podaci
-├── docker-compose.yml # Docker konfiguracija
-├── start.sh # Skripta za pokretanje
-├── stop.sh # Skripta za zaustavljanje
-└── README.md
+```
 
-### Koraci za inicijalizaciju projekta "from the scratch".
+## 📦 Pokretanje  novog projekta sa demo podacima i db 
 
-mkdir CRMVueApp && ./setup.sh
-
+```bash
+git clone git@github.com:DenisSeko/crm-demo-postgres.git
+c/p setup.sh  ~/to/root/project/path
+chmod +x setup.sh - premissions problemi(slučajno)
+pokreni ./setup.sh 
 cd crm-demo-postgres && ./start.sh
 
+# 2. Pokreni aplikaciju
+./start.sh
 
-
-
+# 3. Zaustavi aplikaciju (kad završiš)
+./stop.sh
+```
