@@ -332,7 +332,7 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
-# DOZVOLJENI FAJLOVI - NE IGNORIŠU SE:
+# DOZVOLJENI FAJLOVI - NE IGNORIRAJU SE:
 # .env.production (frontend)
 # vercel.json
 # railway.json
