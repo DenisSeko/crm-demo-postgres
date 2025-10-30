@@ -1,15 +1,20 @@
+[build]
+builder = "nixpacks"
+buildCommand = "cd backend && npm install"
+
 [deploy]
-autoRollback = true
+startCommand = "cd backend && npm start"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
 
-[environments]
-  [environments.production]
-    [environments.production.variables]
-      NODE_ENV = "production"
-      FRONTEND_URL = "https://crm-staging-mu.vercel.app"
-      CORS_ORIGIN = "https://crm-staging-mu.vercel.app"
+[[services]]
+name = "web"
+run = "cd backend && npm start"
 
-  [environments.staging]
-    [environments.staging.variables]  
-      NODE_ENV = "staging"
-      FRONTEND_URL = "https://crm-staging-mu.vercel.app"
-      CORS_ORIGIN = "https://crm-staging-mu.vercel.app"
+[environments.production.variables]
+NODE_ENV = "production"
+PORT = "3001"
+
+[environments.staging.variables]
+NODE_ENV = "production"
+PORT = "3001"

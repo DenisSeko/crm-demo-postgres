@@ -4,7 +4,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment variables - SAMO PRIVATNE VARIJABLE
+# Environment variables - SAMO PRIVATNE
 .env.local
 .env.development
 *.env.backup
@@ -47,22 +47,18 @@ jspm_packages/
 # Optional REPL history
 .node_repl_history
 
-# Output of 'npm pack'
+# Output of "npm pack"
 *.tgz
 
 # Yarn Integrity file
 .yarn-integrity
 
 # DOZVOLJENI FAJLOVI - NE IGNORIŠU SE:
-# .env.example (template)
-# .env.production (production config)
+# .env.production (frontend)
 # vercel.json
 # railway.json
-# Dockerfile
-# database/
 # railway.toml
-# vite.config.js
-# dist/ (build output - potreban za deployment)
+# dist/ (build output)
 
 # Privremeni fajlovi
 *.tmp
@@ -73,9 +69,3 @@ jspm_packages/
 # OS specific
 ehthumbs.db
 [Tt]humbs.db
-
-# Editor directories and files
-.sublime-project
-.sublime-workspace
-*.sublime-workspace
-*.sublime-project
