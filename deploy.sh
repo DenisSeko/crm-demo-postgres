@@ -15,7 +15,7 @@ echo "╚═══════════════════════�
 echo -e "${NC}"
 
 # URL-EVI - AŽURIRANO SA PRAVIM URL-ovima
-BACKEND_URL="https://crm-demo-postgres-staging.up.railway.app"
+BACKEND_URL="https://crm-stage-postgres-staging.up.railway.app"
 FRONTEND_URL="https://crm-staging-mu.vercel.app"
 
 echo -e "${GREEN}🎯 Backend URL: $BACKEND_URL${NC}"
