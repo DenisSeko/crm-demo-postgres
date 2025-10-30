@@ -1,0 +1,15 @@
+[deploy]
+autoRollback = true
+
+[environments]
+  [environments.production]
+    [environments.production.variables]
+      NODE_ENV = "production"
+      FRONTEND_URL = "https://crm-staging-mu.vercel.app"
+      CORS_ORIGIN = "https://crm-staging-mu.vercel.app"
+
+  [environments.staging]
+    [environments.staging.variables]  
+      NODE_ENV = "staging"
+      FRONTEND_URL = "https://crm-staging-mu.vercel.app"
+      CORS_ORIGIN = "https://crm-staging-mu.vercel.app"
