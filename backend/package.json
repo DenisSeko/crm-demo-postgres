@@ -8,7 +8,9 @@
     "dev": "nodemon server.js",
     "db:check": "node database/basic-check.js",
     "db:setup": "node database/setup.js",
-    "db:simple": "node database/simple-setup.js"
+    "db:wait": "node database/wait-for-db.js",
+    "db:start": "node database/start-with-db.js",
+    "start:with-db": "npm run db:wait && npm run db:setup && npm start"
   },
   "dependencies": {
     "express": "^4.18.2",

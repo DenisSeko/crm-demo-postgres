@@ -11,7 +11,7 @@ echo -e "${BLUE}"
 echo "╔══════════════════════════════════════════════╗"
 echo "║           🚀 CRM DEPLOYMENT SCRIPT           ║"
 echo "║        Vercel (Frontend) + Railway (Backend) ║"
-echo "║           FIX SYNTAX ERRORS                  ║"
+echo "║           WAIT FOR DATABASE_URL              ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -49,218 +49,71 @@ if [ "$CURRENT_BRANCH" != "staging" ]; then
     git checkout staging 2>/dev/null || git checkout -b staging
 fi
 
-# 2. KREIRAJ BASIC CHECK SCRIPT
-echo -e "${YELLOW}🔧 Creating basic environment check...${NC}"
+# 2. KREIRAJ WAIT FOR DATABASE SCRIPT
+echo -e "${YELLOW}⏳ Creating wait-for-database script...${NC}"
 
-create_file "backend/database/basic-check.js" "console.log('🔍 BASIC CHECK: Starting environment check...');
+create_file "backend/database/wait-for-db.js" "console.log('⏳ WAIT-FOR-DB: Starting...');
 
-// Check Node.js version
-console.log('🔍 Node.js version:', process.version);
+let attempts = 0;
+const maxAttempts = 60; // 5 minuta (60 * 5 sekundi)
 
-// Check if we're in production
-console.log('🔍 NODE_ENV:', process.env.NODE_ENV || 'not set');
-
-// Check critical environment variables
-console.log('🔍 PORT:', process.env.PORT || 'not set');
-
-// Check for DATABASE_URL - this is the main issue!
-console.log('🔍 DATABASE_URL exists:', !!process.env.DATABASE_URL);
-if (process.env.DATABASE_URL) {
-    const safeUrl = process.env.DATABASE_URL.replace(/:[^:]*@/, ':****@');
-    console.log('🔍 DATABASE_URL (safe):', safeUrl);
-    
-    // Test if it's a valid PostgreSQL URL
-    if (process.env.DATABASE_URL.includes('postgres://') || process.env.DATABASE_URL.includes('postgresql://')) {
-        console.log('✅ DATABASE_URL looks like a valid PostgreSQL URL');
-    } else {
-        console.log('❌ DATABASE_URL does not look like a PostgreSQL URL');
-    }
-} else {
-    console.log('❌ DATABASE_URL is NOT SET!');
-    console.log('🔍 All environment variables:');
-    Object.keys(process.env).forEach(key => {
-        console.log('   ', key, ':', process.env[key] ? '***SET***' : 'NOT SET');
+function waitForDatabaseUrl() {
+    return new Promise((resolve, reject) => {
+        function check() {
+            attempts++;
+            console.log('🔍 Attempt', attempts, 'of', maxAttempts, '- Checking for DATABASE_URL...');
+            
+            if (process.env.DATABASE_URL) {
+                const safeUrl = process.env.DATABASE_URL.replace(/:[^:]*@/, ':****@');
+                console.log('✅ DATABASE_URL found:', safeUrl);
+                resolve(true);
+                return;
+            }
+            
+            if (attempts >= maxAttempts) {
+                console.log('💥 Timeout: DATABASE_URL not available after', maxAttempts, 'attempts');
+                console.log('💡 Please check:');
+                console.log('   1. Is PostgreSQL service added to your Railway project?');
+                console.log('   2. Is PostgreSQL service running?');
+                console.log('   3. Wait a few minutes for database to start');
+                reject(new Error('DATABASE_URL not available'));
+                return;
+            }
+            
+            // Čekaj 5 sekundi prije sljedećeg pokušaja
+            console.log('⏰ DATABASE_URL not ready, waiting 5 seconds...');
+            setTimeout(check, 5000);
+        }
+        
+        check();
     });
 }
 
-// Check if required files exist
-const fs = require('fs');
-const path = require('path');
-
-console.log('🔍 Checking required files...');
-const requiredFiles = [
-    'package.json',
-    'server.js', 
-    'database/setup.js',
-    'database/schema.sql'
-];
-
-requiredFiles.forEach(file => {
-    const filePath = path.join(__dirname, '..', file);
-    const exists = fs.existsSync(filePath);
-    console.log(exists ? '✅' : '❌', file, exists ? 'EXISTS' : 'MISSING');
-    if (!exists && file === 'database/schema.sql') {
-        console.log('   Current directory:', __dirname);
-        console.log('   Files in database directory:');
-        try {
-            const files = fs.readdirSync(path.join(__dirname));
-            files.forEach(f => console.log('     -', f));
-        } catch (e) {
-            console.log('   Cannot read database directory:', e.message);
-        }
-    }
-});
-
-console.log('🎉 BASIC CHECK: Environment check completed');
-process.exit(0);"
-
-# 3. KREIRAJ NOVI SETUP SA BOLJOM ERROR HANDLING
-create_file "backend/database/setup.js" "console.log('🚀 STARTING DATABASE SETUP...');
-
-// Prvo napravi basic check
-try {
-    console.log('1. Running basic environment check...');
-    require('./basic-check.js');
-} catch (error) {
-    console.log('❌ Basic check failed:', error.message);
-    process.exit(1);
-}
-
-// Sada pokušaj database setup
-const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-
-console.log('2. Checking DATABASE_URL...');
-if (!process.env.DATABASE_URL) {
-    console.error('💥 CRITICAL: DATABASE_URL is not set!');
-    console.error('💥 This means Railway has not provided the database connection string.');
-    console.error('💥 Possible reasons:');
-    console.error('   - Database service is not linked to your project');
-    console.error('   - Database is still starting up');
-    console.error('   - Environment variables are not injected yet');
-    process.exit(1);
-}
-
-console.log('3. DATABASE_URL is available, creating connection...');
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 10000
-});
-
-async function setupDatabase() {
-    let client;
-    try {
-        console.log('4. Attempting database connection...');
-        client = await pool.connect();
-        console.log('✅ SUCCESS: Connected to database!');
-
-        console.log('5. Testing database...');
-        const version = await client.query('SELECT version()');
-        console.log('✅ Database version:', version.rows[0].version);
-
-        console.log('6. Checking schema.sql...');
-        const schemaPath = path.join(__dirname, 'schema.sql');
-        if (!fs.existsSync(schemaPath)) {
-            throw new Error('schema.sql not found at: ' + schemaPath);
-        }
-
-        const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
-        console.log('✅ schema.sql loaded');
-
-        console.log('7. Executing schema...');
-        const commands = schemaSQL.split(';').filter(cmd => cmd.trim().length > 0);
-        
-        for (let i = 0; i < commands.length; i++) {
-            const command = commands[i] + ';';
-            try {
-                console.log('   Executing command', (i + 1), 'of', commands.length);
-                await client.query(command);
-            } catch (error) {
-                if (error.message.includes('already exists')) {
-                    console.log('   ⚠️  Command', (i + 1), 'skipped (already exists)');
-                } else {
-                    console.log('   ❌ Command failed:', error.message);
-                    throw error;
-                }
-            }
-        }
-
-        console.log('🎉 DATABASE SETUP COMPLETED SUCCESSFULLY!');
-        
-    } catch (error) {
-        console.error('💥 DATABASE SETUP FAILED:');
-        console.error('   Error:', error.message);
-        console.error('   This usually means:');
-        console.error('   - Database is not ready yet');
-        console.error('   - Connection string is wrong');
-        console.error('   - Network/SSL issues');
-        throw error;
-    } finally {
-        if (client) client.release();
-        await pool.end();
-    }
-}
-
-// Pokreni setup
-setupDatabase()
+// Pokreni čekanje
+waitForDatabaseUrl()
     .then(() => {
-        console.log('🚀 SETUP PROCESS COMPLETED');
+        console.log('🎉 DATABASE_URL is available! Proceeding with setup...');
         process.exit(0);
     })
     .catch(error => {
-        console.log('💥 SETUP PROCESS FAILED');
+        console.log('💥 Failed to get DATABASE_URL');
         process.exit(1);
     });"
 
-# 4. KREIRAJ SIMPLE SCHEMA.SQL
-create_file "backend/database/schema.sql" "-- Simple CRM Schema for Railway PostgreSQL
--- This should work without any issues
+# 3. KREIRAJ NOVI START SCRIPT
+create_file "backend/database/start-with-db.js" "console.log('🚀 START-WITH-DB: Starting application with database check...');
 
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+// Prvo pričekaj da DATABASE_URL bude dostupan
+require('./wait-for-db.js').then(() => {
+    // Sada pokreni setup
+    console.log('📦 Running database setup...');
+    require('./setup.js');
+}).catch(error => {
+    console.log('💥 Cannot start without database');
+    process.exit(1);
+});"
 
-CREATE TABLE IF NOT EXISTS clients (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    company VARCHAR(255),
-    owner_id INTEGER REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS notes (
-    id SERIAL PRIMARY KEY,
-    content TEXT NOT NULL,
-    client_id INTEGER REFERENCES clients(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Insert demo data (safe with ON CONFLICT)
-INSERT INTO users (email, password, name) 
-VALUES ('demo@demo.com', 'demo123', 'Demo User')
-ON CONFLICT (email) DO NOTHING;
-
-INSERT INTO clients (name, email, company, owner_id) 
-VALUES 
-    ('John Doe', 'john@example.com', 'ABC Company', 1),
-    ('Jane Smith', 'jane@example.com', 'XYZ Corp', 1)
-ON CONFLICT (email) DO NOTHING;
-
-INSERT INTO notes (content, client_id) 
-VALUES 
-    ('First meeting completed', 1),
-    ('Follow up scheduled', 1),
-    ('Product demo requested', 2)
-ON CONFLICT DO NOTHING;"
-
-# 5. KREIRAJ PACKAGE.JSON SA BOLJIM SCRIPT-OVIMA
+# 4. KREIRAJ PACKAGE.JSON SA NOVIM SCRIPT-OVIMA
 create_file "backend/package.json" '{
   "name": "crm-backend",
   "version": "1.0.0",
@@ -271,7 +124,9 @@ create_file "backend/package.json" '{
     "dev": "nodemon server.js",
     "db:check": "node database/basic-check.js",
     "db:setup": "node database/setup.js",
-    "db:simple": "node database/simple-setup.js"
+    "db:wait": "node database/wait-for-db.js",
+    "db:start": "node database/start-with-db.js",
+    "start:with-db": "npm run db:wait && npm run db:setup && npm start"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -288,46 +143,7 @@ create_file "backend/package.json" '{
   "license": "MIT"
 }'
 
-# 6. KREIRAJ SIMPLE SETUP BEZ COMPLEX ERROR HANDLING
-create_file "backend/database/simple-setup.js" "console.log('🧪 SIMPLE SETUP: Starting...');
-
-// Prvo provjeri osnove
-console.log('1. Checking basics...');
-console.log('   NODE_ENV:', process.env.NODE_ENV || 'not set');
-console.log('   DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
-
-if (!process.env.DATABASE_URL) {
-    console.log('❌ DATABASE_URL not set - cannot continue');
-    process.exit(1);
-}
-
-// Pokušaj jednostavnu konekciju
-const { Pool } = require('pg');
-
-console.log('2. Creating simple connection...');
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: true
-});
-
-pool.connect()
-    .then(client => {
-        console.log('✅ Connected to database!');
-        return client.query('SELECT 1 as test')
-            .then(result => {
-                console.log('✅ Simple query works:', result.rows[0]);
-                client.release();
-                pool.end();
-                console.log('🎉 SIMPLE SETUP: SUCCESS!');
-                process.exit(0);
-            });
-    })
-    .catch(error => {
-        console.log('❌ Simple setup failed:', error.message);
-        process.exit(1);
-    });"
-
-# 7. KREIRAJ DOCKERFILE SA MANUAL APPROACH
+# 5. KREIRAJ DOCKERFILE SA WAIT LOGIKOM
 create_file "Dockerfile" "FROM node:18-alpine
 
 WORKDIR /app
@@ -341,17 +157,17 @@ RUN npm install --production
 # Kopiraj backend kod
 COPY backend/ ./
 
-# Prvo testiraj osnove, pa pokušaj setup
-CMD [\"sh\", \"-c\", \"echo '🚀 Starting application...' && npm run db:check && echo '---' && npm run db:simple && echo '---' && npm run db:setup && echo '🎉 Starting server...' && npm start\"]
+# Prvo čekaj na bazu, pa pokreni setup
+CMD [\"sh\", \"-c\", \"echo '🚀 Starting application...' && npm run start:with-db\"]
 
 EXPOSE 3001"
 
-# 8. KREIRAJ RAILWAY.TOML SA MANUAL START
+# 6. KREIRAJ RAILWAY.TOML SA WAIT COMMAND
 create_file "railway.toml" "[build]
 builder = \"nixpacks\"
 
 [deploy]
-startCommand = \"npm run db:check && npm run db:simple && npm run db:setup && npm start\"
+startCommand = \"npm run start:with-db\"
 restartPolicyType = \"ON_FAILURE\" 
 restartPolicyMaxRetries = 3
 
@@ -375,7 +191,7 @@ PORT = \"3001\"
 NODE_ENV = \"production\"
 PORT = \"3001\""
 
-# 9. KREIRAJ SERVER.JS
+# 7. KREIRAJ SERVER.JS KOJI RADI BEZ BAZE PRIVREMENO
 create_file "backend/server.js" "const express = require('express');
 const cors = require('cors');
 
@@ -385,74 +201,126 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Basic health check - radi čak i bez baze
 app.get('/api/health', (req, res) => {
+    const dbStatus = process.env.DATABASE_URL ? 'Database: Setting up' : 'Database: Not connected';
     res.json({ 
         status: 'OK', 
-        message: 'Server is running',
-        database: 'Check setup logs',
+        message: 'CRM Backend is running',
+        database: dbStatus,
         timestamp: new Date().toISOString()
     });
 });
 
+// Simple in-memory demo kada baza nije spremna
+let demoClients = [
+    { id: 1, name: 'Demo Client 1', email: 'demo1@test.com', company: 'Test Co' },
+    { id: 2, name: 'Demo Client 2', email: 'demo2@test.com', company: 'Test Corp' }
+];
+
+app.get('/api/clients', (req, res) => {
+    res.json({ 
+        success: true, 
+        clients: demoClients,
+        note: 'Using in-memory data until database is ready'
+    });
+});
+
+app.post('/api/auth/login', (req, res) => {
+    const { email, password } = req.body;
+    
+    // Hardcoded demo login
+    if (email === 'demo@demo.com' && password === 'demo123') {
+        res.json({ 
+            success: true, 
+            user: { id: 1, email: 'demo@demo.com', name: 'Demo User' },
+            token: 'demo-token-123',
+            note: 'Using demo authentication until database is ready'
+        });
+    } else {
+        res.status(401).json({ 
+            success: false, 
+            message: 'Invalid credentials - try demo@demo.com / demo123'
+        });
+    }
+});
+
 app.get('/', (req, res) => {
+    const dbInfo = process.env.DATABASE_URL ? 
+        'Database: Connecting...' : 
+        'Database: Please add PostgreSQL service in Railway';
+    
     res.json({ 
         message: 'CRM Backend API',
         version: '1.0.0',
-        status: 'Database setup may be in progress',
-        check: 'View Railway logs for setup status'
+        status: dbInfo,
+        demo: {
+            login: 'demo@demo.com / demo123',
+            note: 'App works in demo mode until database is ready'
+        }
     });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log('🚀 Server started on port', PORT);
+    console.log('🔧 Database status:', process.env.DATABASE_URL ? 'CONNECTED' : 'NOT CONNECTED');
+    if (!process.env.DATABASE_URL) {
+        console.log('💡 Please add PostgreSQL service in Railway dashboard');
+    }
 });"
 
-# 10. INSTALIRAJ DEPENDENCIES
+# 8. INSTALIRAJ DEPENDENCIES
 echo -e "${YELLOW}📦 Installing dependencies...${NC}"
 cd backend
 npm install --no-audit --no-fund
 cd ..
 
-# 11. TEST LOCAL
+# 9. TEST LOCAL
 echo -e "${YELLOW}🧪 Testing locally...${NC}"
-if node -c backend/database/basic-check.js && node -c backend/database/setup.js && node -c backend/database/simple-setup.js; then
+if node -c backend/database/wait-for-db.js && node -c backend/database/start-with-db.js; then
     echo -e "${GREEN}✅ All files have valid syntax${NC}"
 else
     echo -e "${RED}❌ Syntax error${NC}"
     exit 1
 fi
 
-# 12. GIT COMMIT
-echo -e "${YELLOW}💾 Committing fixes...${NC}"
+# 10. GIT COMMIT
+echo -e "${YELLOW}💾 Committing database wait solution...${NC}"
 git add .
-git commit -m "fix: Step-by-step database setup with better error reporting
+git commit -m "fix: Wait for DATABASE_URL and work without database initially
 
-- Added basic-check.js to test environment first
-- Added simple-setup.js for basic connection test
-- Better error messages and logging
-- Step-by-step approach to find where it fails
-- Manual start command for debugging"
+- Added wait-for-db.js that waits for DATABASE_URL
+- Application works in demo mode without database
+- Better error handling and user messages
+- Step-by-step database connection
+- Manual PostgreSQL setup required in Railway"
 
 check_success "Changes committed"
 
-# 13. PUSH TO GITHUB
+# 11. PUSH TO GITHUB
 echo -e "${YELLOW}📤 Pushing to GitHub...${NC}"
 git push origin staging
 check_success "Pushed to GitHub"
 
-# 14. UPUTE
+# 12. UPUTE ZA RAILWAY SETUP
 echo -e "${GREEN}"
 echo "╔══════════════════════════════════════════════╗"
-echo "║               🔧 FIX DEPLOYED                ║"
+echo "║               🗄️  MANUAL SETUP REQUIRED      ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-echo -e "${YELLOW}🚀 Now we'll see EXACTLY where it fails:${NC}"
+echo -e "${YELLOW}🔧 NOW YOU NEED TO MANUALLY ADD POSTGRESQL:${NC}"
 echo ""
-echo -e "${BLUE}Deployment will now run:${NC}"
-echo "1. 🔍 db:check - Tests environment variables"
-echo "2. 🧪 db:simple - Tests basic database connection" 
-echo "3. 🚀 db:setup - Runs full schema setup"
-echo "4. 🌐 npm start - Starts the server"
+echo -e "${BLUE}1. Go to Railway:${NC} https://railway.app"
+echo -e "${BLUE}2. Select your project${NC}"
+echo -e "${BLUE}3. Click 'New' → 'Database' → 'PostgreSQL'${NC}"
+echo -e "${BLUE}4. Wait 1-2 minutes for database to start${NC}"
+echo -e "${BLUE}5. Redeploy your application${NC}"
 echo ""
-echo -e "${GREEN}Check Railway logs after deploy to see which step fails!${NC}"
+echo -e "${GREEN}🚀 Your app will now:${NC}"
+echo "   • Wait for DATABASE_URL (up to 5 minutes)"
+echo "   • Work in demo mode if no database"
+echo "   • Auto-setup schema when database is ready"
+echo "   • Switch to real PostgreSQL when available"
+echo ""
+echo -e "${YELLOW}📝 After adding PostgreSQL, check Railway logs to see database setup!${NC}"

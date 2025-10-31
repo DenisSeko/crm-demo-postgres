@@ -1,74 +1,47 @@
-const { Pool } = require('pg');
-require('dotenv').config();
+console.log('⏳ WAIT-FOR-DB: Starting...');
 
-async function waitForDatabase() {
-    console.log('⏳ Waiting for PostgreSQL database to be ready...');
-    
-    const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-        // Kratki timeout za brže failanje
-        connectionTimeoutMillis: 5000,
-        query_timeout: 5000
-    });
+let attempts = 0;
+const maxAttempts = 60; // 5 minuta (60 * 5 sekundi)
 
-    let attempts = 0;
-    const maxAttempts = 30; // 30 pokušaja = 2.5 minuta
-    
-    while (attempts < maxAttempts) {
-        try {
+function waitForDatabaseUrl() {
+    return new Promise((resolve, reject) => {
+        function check() {
             attempts++;
-            console.log('🔌 Attempting database connection...', 'Attempt', attempts, 'of', maxAttempts);
+            console.log('🔍 Attempt', attempts, 'of', maxAttempts, '- Checking for DATABASE_URL...');
             
-            // Pokušaj spojiti se na bazu
-            const client = await pool.connect();
-            console.log('✅ Database connection successful!');
-            
-            // Testiraj connection
-            await client.query('SELECT NOW()');
-            console.log('✅ Database is responding to queries');
-            
-            client.release();
-            await pool.end();
-            
-            console.log('🎉 Database is ready for initialization!');
-            return true;
-            
-        } catch (error) {
-            console.log('❌ Database not ready yet:', error.message);
+            if (process.env.DATABASE_URL) {
+                const safeUrl = process.env.DATABASE_URL.replace(/:[^:]*@/, ':****@');
+                console.log('✅ DATABASE_URL found:', safeUrl);
+                resolve(true);
+                return;
+            }
             
             if (attempts >= maxAttempts) {
-                console.log('💥 Max connection attempts reached. Database might not be available.');
-                await pool.end();
-                return false;
+                console.log('💥 Timeout: DATABASE_URL not available after', maxAttempts, 'attempts');
+                console.log('💡 Please check:');
+                console.log('   1. Is PostgreSQL service added to your Railway project?');
+                console.log('   2. Is PostgreSQL service running?');
+                console.log('   3. Wait a few minutes for database to start');
+                reject(new Error('DATABASE_URL not available'));
+                return;
             }
             
             // Čekaj 5 sekundi prije sljedećeg pokušaja
-            console.log('⏰ Waiting 5 seconds before retry...');
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            console.log('⏰ DATABASE_URL not ready, waiting 5 seconds...');
+            setTimeout(check, 5000);
         }
-    }
-    
-    await pool.end();
-    return false;
+        
+        check();
+    });
 }
 
-// Pokreni čekanje ako je skripta pozvana direktno
-if (require.main === module) {
-    waitForDatabase()
-        .then(success => {
-            if (success) {
-                console.log('🚀 Proceeding with database initialization...');
-                process.exit(0);
-            } else {
-                console.log('💥 Cannot connect to database. Exiting.');
-                process.exit(1);
-            }
-        })
-        .catch(error => {
-            console.error('💥 Error waiting for database:', error);
-            process.exit(1);
-        });
-}
-
-module.exports = { waitForDatabase };
+// Pokreni čekanje
+waitForDatabaseUrl()
+    .then(() => {
+        console.log('🎉 DATABASE_URL is available! Proceeding with setup...');
+        process.exit(0);
+    })
+    .catch(error => {
+        console.log('💥 Failed to get DATABASE_URL');
+        process.exit(1);
+    });
