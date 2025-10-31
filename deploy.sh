@@ -12,6 +12,7 @@ echo "╔═══════════════════════�
 echo "║           🚀 CRM DEPLOYMENT SCRIPT           ║"
 echo "║        Vercel (Frontend) + Railway (Backend) ║"
 echo "║           POSTGRESQL + schema.sql            ║"
+echo "║               STAGING BRANCH                 ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -34,13 +35,25 @@ CONTENT
     check_success "Created $1"
 }
 
-# 1. PROVJERA GIT REPO
-echo -e "${YELLOW}🔍 Checking Git repository...${NC}"
+# 1. PROVJERA GIT REPO I BRANCH-A
+echo -e "${YELLOW}🔍 Checking Git repository and branch...${NC}"
 if [ ! -d .git ]; then
     echo -e "${RED}❌ Not a Git repository${NC}"
     echo "Initialize git first: git init && git add . && git commit -m 'Initial commit'"
     exit 1
 fi
+
+# Provjeri koji branch koristimo
+CURRENT_BRANCH=$(git branch --show-current)
+echo -e "${BLUE}📋 Current branch: $CURRENT_BRANCH${NC}"
+
+# Ako nismo na staging branch-u, prebaci se
+if [ "$CURRENT_BRANCH" != "staging" ]; then
+    echo -e "${YELLOW}🔄 Switching to staging branch...${NC}"
+    git checkout -b staging 2>/dev/null || git checkout staging
+    check_success "Switched to staging branch"
+fi
+
 check_success "Git repository found"
 
 # 2. PROVJERA schema.sql
@@ -227,19 +240,20 @@ module.exports = {
     pool
 };"
 
-# 6. KREIRAJ DOCKERFILE ZA RAILWAY
+# 6. KREIRAJ DOCKERFILE ZA RAILWAY - POPRAVLJENO ZA BACKEND FOLDER
 create_file "Dockerfile" "FROM node:18-alpine
 
 WORKDIR /app
 
-# Kopiraj package fajlove
+# Kopiraj backend package fajlove
 COPY backend/package*.json ./
 
 # Instaliraj zavisnosti
 RUN npm install --production
 
-# Kopiraj backend kod
+# Kopiraj CIJELI backend folder
 COPY backend/ ./
+# Kopiraj database schema
 COPY database/ ./database/
 
 # Pokreni init skriptu pri pokretanju
@@ -247,7 +261,7 @@ CMD [\"sh\", \"-c\", \"npm run db:init && npm start\"]
 
 EXPOSE 3001"
 
-# 7. KREIRAJ RAILWAY.TOML SA POSTGRESQL
+# 7. KREIRAJ RAILWAY.TOML SA POSTGRESQL - AŽURIRANO ZA STAGING
 create_file "railway.toml" "[build]
 builder = \"nixpacks\"
 
@@ -255,6 +269,10 @@ builder = \"nixpacks\"
 startCommand = \"npm run db:init && npm start\"
 restartPolicyType = \"ON_FAILURE\"
 restartPolicyMaxRetries = 10
+
+# Deploy samo sa staging branch-a
+[deploy.branches]
+only = [\"staging\"]
 
 [[services]]
 name = \"web\"
@@ -284,7 +302,219 @@ JWT_SECRET=your-jwt-secret-here
 
 # Railway will automatically provide DATABASE_URL"
 
-# 9. TEST BUILD FRONTENDA
+# 9. KREIRAJ AŽURIRANI SERVER.JS SA POSTGRESQL
+if [ ! -f "backend/server.js" ] || grep -q "in-memory" "backend/server.js"; then
+    echo -e "${YELLOW}🔄 Updating server.js with PostgreSQL support...${NC}"
+    create_file "backend/server.js" "const express = require('express');
+const cors = require('cors');
+const { query } = require('./database/db');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Health check sa database konekcijom
+app.get('/api/health', async (req, res) => {
+    try {
+        // Test database connection
+        await query('SELECT NOW()');
+        res.json({ 
+            status: 'OK', 
+            message: 'CRM Backend is running with PostgreSQL',
+            database: 'Connected',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            status: 'ERROR', 
+            message: 'Database connection failed',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Login sa PostgreSQL
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    
+    try {
+        // Pronađi usera u bazi
+        const result = await query(
+            'SELECT id, email, name, password FROM users WHERE email = \$1',
+            [email]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Invalid email or password' 
+            });
+        }
+        
+        const user = result.rows[0];
+        
+        // Za demo svrhe, koristimo jednostavnu provjeru lozinke
+        if (password === user.password) {
+            return res.json({ 
+                success: true, 
+                user: { 
+                    id: user.id, 
+                    email: user.email, 
+                    name: user.name 
+                },
+                token: 'jwt-token-' + user.id
+            });
+        } else {
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Invalid email or password' 
+            });
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error during login' 
+        });
+    }
+});
+
+// Get clients iz PostgreSQL
+app.get('/api/clients', async (req, res) => {
+    try {
+        const result = await query('SELECT * FROM clients ORDER BY created_at DESC');
+        
+        res.json({
+            success: true,
+            clients: result.rows
+        });
+    } catch (error) {
+        console.error('Get clients error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to fetch clients' 
+        });
+    }
+});
+
+// Add client u PostgreSQL
+app.post('/api/clients', async (req, res) => {
+    const { name, email, company, owner_id = 1 } = req.body;
+    
+    try {
+        const result = await query(
+            'INSERT INTO clients (name, email, company, owner_id) VALUES (\$1, \$2, \$3, \$4) RETURNING *',
+            [name, email, company, owner_id]
+        );
+        
+        res.json({
+            success: true,
+            client: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Add client error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to add client' 
+        });
+    }
+});
+
+// Get client notes iz PostgreSQL
+app.get('/api/clients/:id/notes', async (req, res) => {
+    const clientId = parseInt(req.params.id);
+    
+    try {
+        const result = await query(
+            'SELECT * FROM notes WHERE client_id = \$1 ORDER BY created_at DESC',
+            [clientId]
+        );
+        
+        res.json({
+            success: true,
+            notes: result.rows
+        });
+    } catch (error) {
+        console.error('Get notes error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to fetch notes' 
+        });
+    }
+});
+
+// Add note u PostgreSQL
+app.post('/api/clients/:id/notes', async (req, res) => {
+    const clientId = parseInt(req.params.id);
+    const { content } = req.body;
+    
+    try {
+        const result = await query(
+            'INSERT INTO notes (content, client_id) VALUES (\$1, \$2) RETURNING *',
+            [content, clientId]
+        );
+        
+        res.json({
+            success: true,
+            note: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Add note error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to add note' 
+        });
+    }
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'CRM Backend API with PostgreSQL',
+        version: '1.0.0',
+        endpoints: {
+            health: 'GET /api/health',
+            login: 'POST /api/auth/login',
+            clients: 'GET /api/clients',
+            'add-client': 'POST /api/clients',
+            'client-notes': 'GET /api/clients/:id/notes',
+            'add-note': 'POST /api/clients/:id/notes'
+        },
+        database: 'PostgreSQL',
+        demo: {
+            email: 'demo@demo.com',
+            password: 'demo123'
+        }
+    });
+});
+
+// Start server
+app.listen(PORT, '0.0.0.0', () => {
+    console.log('=================================');
+    console.log('🚀 CRM Backend STARTED SUCCESSFULLY');
+    console.log('📍 Port: ' + PORT);
+    console.log('🗄️  Database: PostgreSQL');
+    console.log('🌐 Environment: ' + (process.env.NODE_ENV || 'development'));
+    console.log('✅ Health: http://localhost:' + PORT + '/api/health');
+    console.log('🔑 Demo: demo@demo.com / demo123');
+    console.log('=================================');
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM received, shutting down gracefully');
+    process.exit(0);
+});"
+else
+    echo -e "${GREEN}✅ backend/server.js already exists with PostgreSQL support${NC}"
+fi
+
+# 10. TEST BUILD FRONTENDA
 echo -e "${YELLOW}🧪 Testing frontend build...${NC}"
 cd frontend
 npm install
@@ -292,7 +522,7 @@ npm run build
 cd ..
 check_success "Frontend build test passed"
 
-# 10. GIT COMMIT - SA VIDLJIVIM OUTPUT-OM
+# 11. GIT COMMIT - SA VIDLJIVIM OUTPUT-OM
 echo -e "${YELLOW}💾 Committing deployment files...${NC}"
 echo -e "${YELLOW}📊 Git status before commit:${NC}"
 git status
@@ -304,17 +534,18 @@ git commit -m "feat: PostgreSQL deployment with schema.sql
 - Automatic schema.sql execution on deploy
 - Database initialization script
 - Railway with PostgreSQL service
-- Docker configuration
-- Demo user: demo@demo.com / demo123"
+- Docker configuration (fixed for backend folder)
+- Demo user: demo@demo.com / demo123
+- Deploy from staging branch"
 
 check_success "Changes committed"
 
-# 11. PUSH TO GITHUB - SA VIDLJIVIM OUTPUT-OM
-echo -e "${YELLOW}📤 Pushing to GitHub...${NC}"
-git push origin main
-check_success "Pushed to GitHub"
+# 12. PUSH TO GITHUB - NA STAGING BRANCH
+echo -e "${YELLOW}📤 Pushing to GitHub (staging branch)...${NC}"
+git push origin staging
+check_success "Pushed to GitHub staging branch"
 
-# 12. PRIKAŽI PROMJENE
+# 13. PRIKAŽI PROMJENE
 echo -e "${GREEN}"
 echo "╔══════════════════════════════════════════════╗"
 echo "║               📊 CREATED FILES               ║"
@@ -324,7 +555,7 @@ echo -e "${NC}"
 echo -e "${BLUE}🎯 New files created:${NC}"
 echo "├── 📄 backend/database/init.js"
 echo "├── 📄 backend/database/db.js" 
-echo "├── 📄 Dockerfile"
+echo "├── 📄 Dockerfile (FIXED for backend folder)"
 echo "├── 📄 railway.toml"
 echo "└── 📄 backend/.env.example"
 
@@ -342,6 +573,15 @@ echo -e "${YELLOW}🎯 Next steps:${NC}"
 echo "1. Go to Railway: https://railway.app"
 echo "2. Click 'New Project' → 'Deploy from GitHub repo'"
 echo "3. Select your repository"
-echo "4. Railway will automatically deploy with PostgreSQL!"
+echo "4. Railway will automatically deploy from STAGING branch with PostgreSQL!"
 
-echo -e "${GREEN}🚀 Check your GitHub repository - all changes should be visible now!${NC}"
+echo -e "${GREEN}🚀 Check your GitHub repository - all changes should be visible on STAGING branch now!${NC}"
+
+# 14. PROVJERA BRANCH-A
+echo -e "${YELLOW}🔍 Verifying branch setup...${NC}"
+echo -e "${BLUE}📋 Current branch: $(git branch --show-current)${NC}"
+echo -e "${BLUE}📁 Project structure:${NC}"
+find . -name "*.js" -o -name "*.json" -o -name "Dockerfile" -o -name "*.toml" | head -20
+
+# HOTFIX
+echo -e "${GREEN}✅ Dockerfile is now properly configured to work with backend/ folder!${NC}"

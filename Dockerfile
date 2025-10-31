@@ -2,14 +2,15 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Kopiraj package fajlove
+# Kopiraj backend package fajlove
 COPY backend/package*.json ./
 
 # Instaliraj zavisnosti
 RUN npm install --production
 
-# Kopiraj backend kod
+# Kopiraj CIJELI backend folder
 COPY backend/ ./
+# Kopiraj database schema
 COPY database/ ./database/
 
 # Pokreni init skriptu pri pokretanju

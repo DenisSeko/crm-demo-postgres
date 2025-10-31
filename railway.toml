@@ -6,6 +6,10 @@ startCommand = "npm run db:init && npm start"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 
+# Deploy samo sa staging branch-a
+[deploy.branches]
+only = ["staging"]
+
 [[services]]
 name = "web"
 run = "npm start"
