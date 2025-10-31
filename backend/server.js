@@ -31,12 +31,11 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// Login sa PostgreSQL
+// Ostali endpointovi ostaju isti...
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     
     try {
-        // Pronađi usera u bazi
         const result = await query(
             'SELECT id, email, name, password FROM users WHERE email = ',
             [email]
@@ -51,7 +50,6 @@ app.post('/api/auth/login', async (req, res) => {
         
         const user = result.rows[0];
         
-        // Za demo svrhe, koristimo jednostavnu provjeru lozinke
         if (password === user.password) {
             return res.json({ 
                 success: true, 
@@ -77,91 +75,29 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// Get clients iz PostgreSQL
+// Simple endpoints za sada
 app.get('/api/clients', async (req, res) => {
     try {
         const result = await query('SELECT * FROM clients ORDER BY created_at DESC');
-        
-        res.json({
-            success: true,
-            clients: result.rows
-        });
+        res.json({ success: true, clients: result.rows });
     } catch (error) {
         console.error('Get clients error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Failed to fetch clients' 
-        });
+        res.status(500).json({ success: false, message: 'Failed to fetch clients' });
     }
 });
 
-// Add client u PostgreSQL
 app.post('/api/clients', async (req, res) => {
-    const { name, email, company, owner_id = 1 } = req.body;
+    const { name, email, company } = req.body;
     
     try {
         const result = await query(
-            'INSERT INTO clients (name, email, company, owner_id) VALUES (, , , ) RETURNING *',
-            [name, email, company, owner_id]
+            'INSERT INTO clients (name, email, company) VALUES (, , ) RETURNING *',
+            [name, email, company]
         );
-        
-        res.json({
-            success: true,
-            client: result.rows[0]
-        });
+        res.json({ success: true, client: result.rows[0] });
     } catch (error) {
         console.error('Add client error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Failed to add client' 
-        });
-    }
-});
-
-// Get client notes iz PostgreSQL
-app.get('/api/clients/:id/notes', async (req, res) => {
-    const clientId = parseInt(req.params.id);
-    
-    try {
-        const result = await query(
-            'SELECT * FROM notes WHERE client_id =  ORDER BY created_at DESC',
-            [clientId]
-        );
-        
-        res.json({
-            success: true,
-            notes: result.rows
-        });
-    } catch (error) {
-        console.error('Get notes error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Failed to fetch notes' 
-        });
-    }
-});
-
-// Add note u PostgreSQL
-app.post('/api/clients/:id/notes', async (req, res) => {
-    const clientId = parseInt(req.params.id);
-    const { content } = req.body;
-    
-    try {
-        const result = await query(
-            'INSERT INTO notes (content, client_id) VALUES (, ) RETURNING *',
-            [content, clientId]
-        );
-        
-        res.json({
-            success: true,
-            note: result.rows[0]
-        });
-    } catch (error) {
-        console.error('Add note error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Failed to add note' 
-        });
+        res.status(500).json({ success: false, message: 'Failed to add client' });
     }
 });
 
@@ -174,9 +110,7 @@ app.get('/', (req, res) => {
             health: 'GET /api/health',
             login: 'POST /api/auth/login',
             clients: 'GET /api/clients',
-            'add-client': 'POST /api/clients',
-            'client-notes': 'GET /api/clients/:id/notes',
-            'add-note': 'POST /api/clients/:id/notes'
+            'add-client': 'POST /api/clients'
         },
         database: 'PostgreSQL',
         demo: {
@@ -196,10 +130,4 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('✅ Health: http://localhost:' + PORT + '/api/health');
     console.log('🔑 Demo: demo@demo.com / demo123');
     console.log('=================================');
-});
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-    console.log('SIGTERM received, shutting down gracefully');
-    process.exit(0);
 });

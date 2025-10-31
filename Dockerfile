@@ -11,11 +11,10 @@ RUN npm install --production
 # Kopiraj CIJELI backend folder
 COPY backend/ ./
 
-# Kopiraj database schema u DVIJE lokacije za sigurnost
-COPY database/ ./database/
-COPY database/schema.sql ./schema.sql
+# Kopiraj database schema
+COPY database/schema.sql ./database/schema.sql
 
-# Pokreni init skriptu pri pokretanju
-CMD ["sh", "-c", "npm run db:init && npm start"]
+# Pokreni wait-for-db PRVO, pa init, pa server
+CMD ["sh", "-c", "echo '🚀 Starting application...' && npm run db:wait && echo '✅ Database ready, running init...' && npm run db:init && echo '🎉 Starting server...' && npm start"]
 
 EXPOSE 3001

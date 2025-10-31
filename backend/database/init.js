@@ -1,10 +1,19 @@
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
+const { waitForDatabase } = require('./wait-for-db');
 require('dotenv').config();
 
 async function initializeDatabase() {
-    console.log('🗄️  Initializing PostgreSQL database from schema.sql...');
+    console.log('🗄️  Starting PostgreSQL database initialization...');
+    
+    // Prvo pričekaj da baza bude spremna
+    const dbReady = await waitForDatabase();
+    if (!dbReady) {
+        throw new Error('Database is not ready for initialization');
+    }
+    
+    console.log('✅ Database is ready, proceeding with schema setup...');
     
     const pool = new Pool({
         connectionString: process.env.DATABASE_URL,
@@ -12,71 +21,50 @@ async function initializeDatabase() {
     });
 
     try {
-        // POKUŠAJ RAZLIČITE PUTANJE DO SCHEMA.SQL
-        const possiblePaths = [
-            path.join(__dirname, 'schema.sql'),                    // /app/database/schema.sql
-            path.join(__dirname, '..', 'schema.sql'),              // /app/schema.sql  
-            path.join(__dirname, '..', '..', 'database', 'schema.sql'), // /database/schema.sql
-            '/app/database/schema.sql',                            // Apsolutna putanja u Dockeru
-            '/app/schema.sql',                                     // Apsolutna putanja u Dockeru
-            './database/schema.sql',                               // Relativna putanja
-            './schema.sql'                                         // Relativna putanja
-        ];
+        // Pronađi schema.sql
+        const schemaPath = path.join(__dirname, 'schema.sql');
+        console.log('🔍 Looking for schema.sql at:', schemaPath);
         
-        let schemaPath = null;
-        let schemaSQL = null;
+        if (!fs.existsSync(schemaPath)) {
+            throw new Error('schema.sql not found at: ' + schemaPath);
+        }
         
-        // Pronađi schema.sql na bilo kojoj od mogućih putanja
-        for (const possiblePath of possiblePaths) {
+        const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
+        console.log('✅ Found schema.sql, running database setup...');
+        
+        // Podijeli SQL komande i pokreni ih jednu po jednu
+        const sqlCommands = schemaSQL
+            .split(';')
+            .map(cmd => cmd.trim())
+            .filter(cmd => cmd.length > 0);
+        
+        console.log('📝 Found', sqlCommands.length, 'SQL commands to execute');
+        
+        for (let i = 0; i < sqlCommands.length; i++) {
+            const command = sqlCommands[i] + ';';
             try {
-                console.log('🔍 Looking for schema.sql at:', possiblePath);
-                if (fs.existsSync(possiblePath)) {
-                    schemaPath = possiblePath;
-                    schemaSQL = fs.readFileSync(possiblePath, 'utf8');
-                    console.log('✅ Found schema.sql at:', schemaPath);
-                    break;
-                }
+                console.log('🔄 Executing command', (i + 1), 'of', sqlCommands.length);
+                await pool.query(command);
+                console.log('✅ Command', (i + 1), 'executed successfully');
             } catch (error) {
-                // Nastavi sa sljedećom putanjom
-                console.log('❌ Not found at:', possiblePath);
+                // Ako je greška "relation already exists", ignoriši je
+                if (error.message.includes('already exists')) {
+                    console.log('⚠️  Table already exists, continuing...');
+                } else {
+                    throw error;
+                }
             }
         }
         
-        if (!schemaSQL) {
-            console.log('❌ schema.sql not found at any known location');
-            console.log('📁 Current working directory:', process.cwd());
-            console.log('📁 Directory contents:');
-            try {
-                const files = fs.readdirSync('.');
-                console.log('Root:', files);
-                
-                if (fs.existsSync('./database')) {
-                    const dbFiles = fs.readdirSync('./database');
-                    console.log('Database folder:', dbFiles);
-                }
-                
-                if (fs.existsSync('./app')) {
-                    const appFiles = fs.readdirSync('./app');
-                    console.log('App folder:', appFiles);
-                }
-            } catch (error) {
-                console.log('⚠️  Could not read directory structure');
-            }
-            throw new Error('schema.sql not found');
-        }
+        console.log('✅ All SQL commands executed successfully');
         
-        console.log('📖 Running schema.sql from:', schemaPath);
-        
-        // Pokreni SQL komande iz schema.sql
-        await pool.query(schemaSQL);
-        
-        console.log('✅ Database initialized successfully from schema.sql');
-        
-        // Dodaj demo podatke ako su potrebni
+        // Dodaj demo podatke
         await seedDemoData(pool);
         
+        console.log('🎉 Database initialization completed successfully!');
+        
     } catch (error) {
-        console.error('❌ Database initialization error:', error);
+        console.error('❌ Database initialization error:', error.message);
         throw error;
     } finally {
         await pool.end();
@@ -102,13 +90,21 @@ async function seedDemoData(pool) {
         }
         
     } catch (error) {
-        console.log('⚠️  Could not seed demo data (table might not exist yet):', error.message);
+        console.log('⚠️  Could not seed demo data:', error.message);
     }
 }
 
 // Pokreni inicijalizaciju ako je skripta pozvana direktno
 if (require.main === module) {
-    initializeDatabase().catch(console.error);
+    initializeDatabase()
+        .then(() => {
+            console.log('🚀 Database initialization process completed');
+            process.exit(0);
+        })
+        .catch(error => {
+            console.error('💥 Database initialization failed:', error);
+            process.exit(1);
+        });
 }
 
 module.exports = { initializeDatabase };
