@@ -1,7 +1,7 @@
 <template>
   <div class="max-w-md mx-auto mt-20 p-6 bg-white rounded-lg shadow-md">
     <h2 class="text-2xl font-bold mb-6 text-center">Prijava</h2>
-    <form @submit.prevent="$emit('login', loginData)" class="space-y-4">
+    <form @submit.prevent="handleLogin" class="space-y-4">
       <div>
         <label class="block text-sm font-medium text-gray-700">Email</label>
         <input v-model="loginData.email" type="email"
@@ -18,7 +18,7 @@
         class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-center"
         :disabled="isLoggingIn">
         <span v-if="isLoggingIn" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></span>
-        {{ isLoggingIn ? 'Prijavljujem...' : 'Prijavi se' }}
+        {{ isLoggingIn ? "Prijavljujem..." : "Prijavi se" }}
       </button>
     </form>
     
@@ -29,7 +29,7 @@
     </div>
 
     <div class="mt-4 text-center">
-      <a href="#" @click.prevent="$emit('go-home')" class="text-blue-600 hover:text-blue-800 text-sm">
+      <a href="#" @click.prevent="$emit(\"go-home\")" class="text-blue-600 hover:text-blue-800 text-sm">
         ← Povratak na početnu
       </a>
     </div>
@@ -37,19 +37,29 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive } from "vue"
+import { authAPI } from "@/services/api"
 
-defineProps({
-  isLoggingIn: {
-    type: Boolean,
-    default: false
-  }
-})
+const emit = defineEmits(["login", "go-home"])
 
-defineEmits(['login', 'go-home'])
+const isLoggingIn = ref(false)
 
 const loginData = reactive({
-  email: 'demo@demo.com',
-  password: 'demo123'
+  email: "demo@demo.com",
+  password: "demo123"
 })
+
+const handleLogin = async () => {
+  isLoggingIn.value = true
+  try {
+    await new Promise(resolve => setTimeout(resolve, 500))
+    const response = await authAPI.login(loginData.email, loginData.password)
+    emit("login", response)
+  } catch (error) {
+    console.error("Login failed:", error.response?.data || error.message)
+    alert("Pogrešni podaci za prijavu: " + (error.response?.data?.message || error.message))
+  } finally {
+    isLoggingIn.value = false
+  }
+}
 </script>

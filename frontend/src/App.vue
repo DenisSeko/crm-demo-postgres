@@ -20,7 +20,7 @@
         <LoginForm 
           v-else 
           :is-logging-in="isLoggingIn" 
-          @login="login" 
+          @login="handleLogin" 
           @go-home="goToHome" 
         />
       </div>
@@ -34,16 +34,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import axios from 'axios'
+import { ref, onMounted, watch } from "vue"
+import { useRouter } from "vue-router"
 
 // Components
-import AppHeader from './components/AppHeader.vue'
-import HomePage from './components/HomePage.vue'
-import LoginForm from './components/LoginForm.vue'
-import Loader from './components/Loader.vue'
-import Dashboard from './components/Dashboard.vue'
+import AppHeader from "./components/AppHeader.vue"
+import HomePage from "./components/HomePage.vue"
+import LoginForm from "./components/LoginForm.vue"
+import Loader from "./components/Loader.vue"
+import Dashboard from "./components/Dashboard.vue"
 
 const router = useRouter()
 
@@ -56,67 +55,52 @@ const isLoggingIn = ref(false)
 // Methods
 const goToLogin = () => {
   showHomepage.value = false
-  router.push('/?login=true')
+  router.push("/?login=true")
 }
 
 const goToHome = () => {
   showHomepage.value = true
-  router.push('/')
+  router.push("/")
 }
 
-const login = async (loginData) => {
-  isLoggingIn.value = true
-  
-  try {
-    // Button spinner delay
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    const response = await axios.post('/api/login', loginData)
-    const { token, user: userData } = response.data
-    
-    // Show main loader
+const handleLogin = async (loginResponse) => {
+  if (loginResponse.success) {
+    isLoggingIn.value = true
     showLoader.value = true
     
-    // Simulate data loading
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    localStorage.setItem('token', token)
-    localStorage.setItem('user', JSON.stringify(userData))
-    user.value = userData
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-    
-    goToHome()
-    
-  } catch (error) {
-    console.error('Login failed:', error.response?.data || error.message)
-    alert('Pogrešni podaci za prijavu')
-  } finally {
-    isLoggingIn.value = false
-    showLoader.value = false
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      
+      localStorage.setItem("token", loginResponse.token)
+      localStorage.setItem("user", JSON.stringify(loginResponse.user))
+      user.value = loginResponse.user
+      
+      goToHome()
+    } finally {
+      isLoggingIn.value = false
+      showLoader.value = false
+    }
   }
 }
 
 const logout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
+  localStorage.removeItem("token")
+  localStorage.removeItem("user")
   user.value = null
-  delete axios.defaults.headers.common['Authorization']
   goToHome()
 }
 
 // Watchers & Lifecycle
 watch(() => router.currentRoute.value.query, (newQuery) => {
-  showHomepage.value = newQuery.login !== 'true'
+  showHomepage.value = newQuery.login !== "true"
 }, { immediate: true })
 
 onMounted(() => {
-  // Check for saved user session
-  const savedUser = localStorage.getItem('user')
-  const savedToken = localStorage.getItem('token')
+  const savedUser = localStorage.getItem("user")
+  const savedToken = localStorage.getItem("token")
   
   if (savedUser && savedToken) {
     user.value = JSON.parse(savedUser)
-    axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`
   }
 })
 </script>
