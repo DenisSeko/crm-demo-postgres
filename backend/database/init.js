@@ -1,7 +1,10 @@
-const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-require('dotenv').config();
+import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function initializeDatabase() {
     console.log('🗄️  Initializing PostgreSQL database from schema.sql...');
@@ -39,12 +42,12 @@ async function seedDemoData(pool) {
         console.log('🌱 Seeding demo data...');
         
         // Provjeri da li već postoje demo podaci
-        const userCheck = await pool.query('SELECT * FROM users WHERE email = ', ['demo@demo.com']);
+        const userCheck = await pool.query('SELECT * FROM users WHERE email = $1', ['demo@demo.com']);
         
         if (userCheck.rows.length === 0) {
             // Dodaj demo usera
             await pool.query(
-                'INSERT INTO users (email, password, name) VALUES (, , )',
+                'INSERT INTO users (email, password, name) VALUES ($1, $2, $3)',
                 ['demo@demo.com', 'demo123', 'Demo User']
             );
             console.log('👤 Demo user created: demo@demo.com / demo123');
@@ -58,8 +61,8 @@ async function seedDemoData(pool) {
 }
 
 // Pokreni inicijalizaciju ako je skripta pozvana direktno
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
     initializeDatabase().catch(console.error);
 }
 
-module.exports = { initializeDatabase };
+export { initializeDatabase };

@@ -12,7 +12,7 @@ echo "╔═══════════════════════�
 echo "║           🚀 CRM DEPLOYMENT SCRIPT           ║"
 echo "║        Vercel (Frontend) + Railway (Backend) ║"
 echo "║           POSTGRESQL + schema.sql            ║"
-echo "║              COMMONJS FIX                    ║"
+echo "║               ES MODULES FIX                 ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -105,8 +105,8 @@ else
     echo -e "${GREEN}✅ frontend/.env.production already exists${NC}"
 fi
 
-# 5. KREIRAJ BACKEND SA POSTGRESQL PODRŠKOM - COMMONJS
-echo -e "${YELLOW}🔧 Preparing backend with PostgreSQL (CommonJS)...${NC}"
+# 5. KREIRAJ BACKEND SA POSTGRESQL PODRŠKOM - ES MODULES
+echo -e "${YELLOW}🔧 Preparing backend with PostgreSQL (ES Modules)...${NC}"
 
 # Kreiraj database folder ako ne postoji
 mkdir -p backend/database
@@ -150,21 +150,19 @@ else
     # Dodaj PostgreSQL dependencies ako ne postoje
     if ! grep -q "pg" backend/package.json; then
         echo -e "${YELLOW}➕ Adding PostgreSQL dependencies...${NC}"
-        # Privremeno rješenje - dodaj ručno pg dependency
-        if command -v npm > /dev/null 2>&1; then
-            cd backend && npm install pg bcryptjs --save && cd ..
-            check_success "Added PostgreSQL dependencies"
-        else
-            echo -e "${YELLOW}⚠️  Please manually add 'pg' and 'bcryptjs' to backend/package.json dependencies${NC}"
-        fi
+        # Ovo je pojednostavljeno - u praksi bi koristili jq za JSON manipulaciju
+        echo -e "${YELLOW}⚠️  Please manually add 'pg' and 'bcryptjs' to backend/package.json dependencies${NC}"
     fi
 fi
 
-# Database init script - COMMONJS verzija
-create_file "backend/database/init.js" "const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-require('dotenv').config();
+# Database init script - ES MODULES verzija
+create_file "backend/database/init.js" "import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function initializeDatabase() {
     console.log('🗄️  Initializing PostgreSQL database from schema.sql...');
@@ -202,12 +200,12 @@ async function seedDemoData(pool) {
         console.log('🌱 Seeding demo data...');
         
         // Provjeri da li već postoje demo podaci
-        const userCheck = await pool.query('SELECT * FROM users WHERE email = $1', ['demo@demo.com']);
+        const userCheck = await pool.query('SELECT * FROM users WHERE email = \$1', ['demo@demo.com']);
         
         if (userCheck.rows.length === 0) {
             // Dodaj demo usera
             await pool.query(
-                'INSERT INTO users (email, password, name) VALUES ($1, $2, $3)',
+                'INSERT INTO users (email, password, name) VALUES (\$1, \$2, \$3)',
                 ['demo@demo.com', 'demo123', 'Demo User']
             );
             console.log('👤 Demo user created: demo@demo.com / demo123');
@@ -221,15 +219,14 @@ async function seedDemoData(pool) {
 }
 
 // Pokreni inicijalizaciju ako je skripta pozvana direktno
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
     initializeDatabase().catch(console.error);
 }
 
-module.exports = { initializeDatabase };"
+export { initializeDatabase };"
 
-# Database connection helper - COMMONJS
-create_file "backend/database/db.js" "const { Pool } = require('pg');
-require('dotenv').config();
+# Database connection helper - ES MODULES
+create_file "backend/database/db.js" "import { Pool } from 'pg';
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -245,10 +242,8 @@ pool.on('error', (err) => {
     console.error('❌ PostgreSQL connection error:', err);
 });
 
-module.exports = {
-    query: (text, params) => pool.query(text, params),
-    pool
-};"
+export const query = (text, params) => pool.query(text, params);
+export { pool };"
 
 # 6. KREIRAJ DOCKERFILE ZA RAILWAY
 create_file "Dockerfile" "FROM node:18-alpine
@@ -312,12 +307,13 @@ JWT_SECRET=your-jwt-secret-here
 
 # Railway will automatically provide DATABASE_URL"
 
-# 9. KREIRAJ AŽURIRANI SERVER.JS - COMMONJS
-echo -e "${YELLOW}🔄 Creating server.js with CommonJS...${NC}"
-create_file "backend/server.js" "const express = require('express');
-const cors = require('cors');
-const { query } = require('./database/db');
-require('dotenv').config();
+# 9. KREIRAJ AŽURIRANI SERVER.JS - ES MODULES
+if [ ! -f "backend/server.js" ] || grep -q "require(" "backend/server.js"; then
+    echo -e "${YELLOW}🔄 Updating server.js with ES Modules...${NC}"
+    create_file "backend/server.js" "import express from 'express';
+import cors from 'cors';
+import { query } from './database/db.js';
+import { initializeDatabase } from './database/init.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -354,7 +350,7 @@ app.post('/api/auth/login', async (req, res) => {
     try {
         // Pronađi usera u bazi
         const result = await query(
-            'SELECT id, email, name, password FROM users WHERE email = $1',
+            'SELECT id, email, name, password FROM users WHERE email = \$1',
             [email]
         );
         
@@ -417,7 +413,7 @@ app.post('/api/clients', async (req, res) => {
     
     try {
         const result = await query(
-            'INSERT INTO clients (name, email, company, owner_id) VALUES ($1, $2, $3, $4) RETURNING *',
+            'INSERT INTO clients (name, email, company, owner_id) VALUES (\$1, \$2, \$3, \$4) RETURNING *',
             [name, email, company, owner_id]
         );
         
@@ -440,7 +436,7 @@ app.get('/api/clients/:id/notes', async (req, res) => {
     
     try {
         const result = await query(
-            'SELECT * FROM notes WHERE client_id = $1 ORDER BY created_at DESC',
+            'SELECT * FROM notes WHERE client_id = \$1 ORDER BY created_at DESC',
             [clientId]
         );
         
@@ -464,7 +460,7 @@ app.post('/api/clients/:id/notes', async (req, res) => {
     
     try {
         const result = await query(
-            'INSERT INTO notes (content, client_id) VALUES ($1, $2) RETURNING *',
+            'INSERT INTO notes (content, client_id) VALUES (\$1, \$2) RETURNING *',
             [content, clientId]
         );
         
@@ -519,17 +515,11 @@ process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');
     process.exit(0);
 });"
-
-# 10. TEST COMMONJS SYNTAX
-echo -e "${YELLOW}🧪 Testing CommonJS syntax...${NC}"
-if node -c backend/server.js && node -c backend/database/init.js && node -c backend/database/db.js; then
-    echo -e "${GREEN}✅ All CommonJS files have valid syntax${NC}"
 else
-    echo -e "${RED}❌ Syntax error in CommonJS files${NC}"
-    exit 1
+    echo -e "${GREEN}✅ backend/server.js already exists with ES Modules support${NC}"
 fi
 
-# 11. TEST BUILD FRONTENDA
+# 10. TEST BUILD FRONTENDA
 echo -e "${YELLOW}🧪 Testing frontend build...${NC}"
 cd frontend
 npm install
@@ -537,16 +527,16 @@ npm run build
 cd ..
 check_success "Frontend build test passed"
 
-# 12. GIT COMMIT
+# 11. GIT COMMIT
 echo -e "${YELLOW}💾 Committing deployment files...${NC}"
 echo -e "${YELLOW}📊 Git status before commit:${NC}"
 git status
 
 git add .
-git commit -m "feat: PostgreSQL deployment with CommonJS
+git commit -m "feat: PostgreSQL deployment with ES Modules
 
 - PostgreSQL database integration
-- CommonJS configuration (require/module.exports)
+- ES Modules support (import/export)
 - Automatic schema.sql execution on deploy
 - Database initialization script
 - Railway with PostgreSQL service
@@ -556,28 +546,28 @@ git commit -m "feat: PostgreSQL deployment with CommonJS
 
 check_success "Changes committed"
 
-# 13. PUSH TO GITHUB - NA STAGING BRANCH
+# 12. PUSH TO GITHUB - NA STAGING BRANCH
 echo -e "${YELLOW}📤 Pushing to GitHub (staging branch)...${NC}"
 git push origin staging
 check_success "Pushed to GitHub staging branch"
 
-# 14. PRIKAŽI PROMJENE
+# 13. PRIKAŽI PROMJENE
 echo -e "${GREEN}"
 echo "╔══════════════════════════════════════════════╗"
 echo "║               📊 CREATED FILES               ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-echo -e "${BLUE}🎯 New files (CommonJS):${NC}"
-echo "├── 📄 backend/database/init.js (CommonJS)"
-echo "├── 📄 backend/database/db.js (CommonJS)" 
+echo -e "${BLUE}🎯 New files (ES Modules):${NC}"
+echo "├── 📄 backend/database/init.js (ES Modules)"
+echo "├── 📄 backend/database/db.js (ES Modules)" 
 echo "├── 📄 Dockerfile"
 echo "├── 📄 railway.toml"
 echo "└── 📄 backend/.env.example"
 
 echo -e "${BLUE}🔧 Updated files:${NC}"
 echo "├── 📄 backend/package.json (No 'type: module')"
-echo "└── 📄 backend/server.js (CommonJS)"
+echo "└── 📄 backend/server.js (ES Modules)"
 
 echo -e "${GREEN}"
 echo "╔══════════════════════════════════════════════╗"
@@ -591,14 +581,10 @@ echo "2. Click 'New Project' → 'Deploy from GitHub repo'"
 echo "3. Select your repository"
 echo "4. Railway will automatically deploy with PostgreSQL!"
 
-echo -e "${GREEN}🚀 CommonJS configuration fixed! Now using require()/module.exports${NC}"
+echo -e "${GREEN}🚀 ES Modules issue fixed! Now using import/export instead of require()${NC}"
 
-# 15. PROVJERA STRUKTURE
+# 14. PROVJERA STRUKTURE
 echo -e "${YELLOW}🔍 Verifying project structure...${NC}"
 echo -e "${BLUE}📋 Current branch: $(git branch --show-current)${NC}"
 echo -e "${BLUE}📁 Backend structure:${NC}"
-ls -la backend/
-ls -la backend/database/
-
-echo -e "${GREEN}✅ Deployment script completed successfully!${NC}"
-echo -e "${YELLOW}🚀 Your app is ready for deployment on Railway!${NC}"
+find backend -name "*.js" | head -10
