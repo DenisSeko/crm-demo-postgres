@@ -2,19 +2,19 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Kopiraj backend package fajlove
+# Kopiraj package fajlove
 COPY backend/package*.json ./
 
 # Instaliraj zavisnosti
 RUN npm install --production
 
-# Kopiraj CIJELI backend folder
+# Kopiraj backend kod
 COPY backend/ ./
 
-# Kopiraj database schema
+# Kopiraj schema.sql na specifičnu lokaciju
 COPY database/schema.sql ./database/schema.sql
 
-# Pokreni wait-for-db PRVO, pa init, pa server
-CMD ["sh", "-c", "echo '🚀 Starting application...' && npm run db:wait && echo '✅ Database ready, running init...' && npm run db:init && echo '🎉 Starting server...' && npm start"]
+# Pokreni database setup pa server
+CMD ["sh", "-c", "echo '🚀 Starting application...' && npm run db:setup && echo '🎉 Starting server...' && npm start"]
 
 EXPOSE 3001

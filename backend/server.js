@@ -6,14 +6,11 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Health check sa database konekcijom
 app.get('/api/health', async (req, res) => {
     try {
-        // Test database connection
         await query('SELECT NOW()');
         res.json({ 
             status: 'OK', 
@@ -31,7 +28,6 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// Ostali endpointovi ostaju isti...
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     
@@ -75,7 +71,6 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// Simple endpoints za sada
 app.get('/api/clients', async (req, res) => {
     try {
         const result = await query('SELECT * FROM clients ORDER BY created_at DESC');
@@ -101,7 +96,6 @@ app.post('/api/clients', async (req, res) => {
     }
 });
 
-// Root endpoint
 app.get('/', (req, res) => {
     res.json({ 
         message: 'CRM Backend API with PostgreSQL',
@@ -120,7 +114,6 @@ app.get('/', (req, res) => {
     });
 });
 
-// Start server
 app.listen(PORT, '0.0.0.0', () => {
     console.log('=================================');
     console.log('🚀 CRM Backend STARTED SUCCESSFULLY');

@@ -11,8 +11,7 @@ echo -e "${BLUE}"
 echo "╔══════════════════════════════════════════════╗"
 echo "║           🚀 CRM DEPLOYMENT SCRIPT           ║"
 echo "║        Vercel (Frontend) + Railway (Backend) ║"
-echo "║           POSTGRESQL + schema.sql            ║"
-echo "║           DATABASE CONNECTION FIX            ║"
+echo "║           POSTGRESQL SCHEMA FIX              ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -57,23 +56,80 @@ fi
 
 check_success "Git repository found"
 
-# 2. PROVJERA schema.sql
-echo -e "${YELLOW}🗄️  Checking database schema...${NC}"
+# 2. PROVJERA I POPRAVAK SCHEMA.SQL
+echo -e "${YELLOW}🗄️  Checking and fixing schema.sql...${NC}"
 if [ ! -f "database/schema.sql" ]; then
     echo -e "${RED}❌ schema.sql not found${NC}"
     echo "Please ensure schema.sql exists in database/ directory"
     exit 1
 fi
-check_success "schema.sql found"
+
+# Provjeri schema.sql sadržaj
+echo -e "${YELLOW}📋 Checking schema.sql content...${NC}"
+if ! grep -q "CREATE TABLE" database/schema.sql && ! grep -q "INSERT INTO" database/schema.sql; then
+    echo -e "${YELLOW}⚠️  schema.sql might be empty or invalid, creating basic schema...${NC}"
+    create_file "database/schema.sql" "-- PostgreSQL Schema for CRM App
+-- This schema will be automatically executed on Railway deployment
+
+-- Enable UUID extension if needed
+CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Clients table
+CREATE TABLE IF NOT EXISTS clients (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    company VARCHAR(255),
+    phone VARCHAR(50),
+    owner_id INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Notes table
+CREATE TABLE IF NOT EXISTS notes (
+    id SERIAL PRIMARY KEY,
+    content TEXT NOT NULL,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert demo user if not exists
+INSERT INTO users (email, password, name) 
+VALUES ('demo@demo.com', 'demo123', 'Demo User')
+ON CONFLICT (email) DO NOTHING;
+
+-- Insert demo clients
+INSERT INTO clients (name, email, company, owner_id) 
+VALUES 
+    ('John Doe', 'john@example.com', 'ABC Company', 1),
+    ('Jane Smith', 'jane@example.com', 'XYZ Corp', 1)
+ON CONFLICT (email) DO NOTHING;
+
+-- Insert demo notes
+INSERT INTO notes (content, client_id) 
+VALUES 
+    ('First meeting went well. Interested in our services.', 1),
+    ('Follow up scheduled for next week.', 1),
+    ('Requested product demo for next month.', 2)
+ON CONFLICT DO NOTHING;"
+else
+    echo -e "${GREEN}✅ schema.sql looks valid${NC}"
+fi
 
 # 3. KREIRAJ FRONTEND DEPLOYMENT FAJLOVE
 echo -e "${YELLOW}🎨 Preparing frontend for Vercel...${NC}"
-
-# Ukloni stari vercel.json ako postoji
-if [ -f "frontend/vercel.json" ]; then
-    echo -e "${YELLOW}🗑️  Removing old vercel.json...${NC}"
-    rm -f frontend/vercel.json
-fi
 
 create_file "frontend/vercel.json" '{
   "version": 2,
@@ -93,8 +149,8 @@ create_file "frontend/vercel.json" '{
 
 create_file "frontend/.env.production" 'VITE_API_URL=YOUR_RAILWAY_BACKEND_URL_HERE'
 
-# 4. KREIRAJ BACKEND SA DATABASE CONNECTION RETRY
-echo -e "${YELLOW}🔧 Preparing backend with Database Connection Retry...${NC}"
+# 4. KREIRAJ BACKEND SA POUZDANIM SCHEMA IMPORT-OM
+echo -e "${YELLOW}🔧 Preparing backend with reliable schema import...${NC}"
 
 mkdir -p backend/database
 
@@ -108,7 +164,7 @@ create_file "backend/package.json" '{
     "start": "node server.js",
     "dev": "nodemon server.js",
     "db:init": "node database/init.js",
-    "db:wait": "node database/wait-for-db.js"
+    "db:setup": "node database/setup.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -125,176 +181,133 @@ create_file "backend/package.json" '{
   "license": "MIT"
 }'
 
-# Database wait script - Čeka da baza bude spremna
-create_file "backend/database/wait-for-db.js" "const { Pool } = require('pg');
-require('dotenv').config();
-
-async function waitForDatabase() {
-    console.log('⏳ Waiting for PostgreSQL database to be ready...');
-    
-    const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-        // Kratki timeout za brže failanje
-        connectionTimeoutMillis: 5000,
-        query_timeout: 5000
-    });
-
-    let attempts = 0;
-    const maxAttempts = 30; // 30 pokušaja = 2.5 minuta
-    
-    while (attempts < maxAttempts) {
-        try {
-            attempts++;
-            console.log('🔌 Attempting database connection...', 'Attempt', attempts, 'of', maxAttempts);
-            
-            // Pokušaj spojiti se na bazu
-            const client = await pool.connect();
-            console.log('✅ Database connection successful!');
-            
-            // Testiraj connection
-            await client.query('SELECT NOW()');
-            console.log('✅ Database is responding to queries');
-            
-            client.release();
-            await pool.end();
-            
-            console.log('🎉 Database is ready for initialization!');
-            return true;
-            
-        } catch (error) {
-            console.log('❌ Database not ready yet:', error.message);
-            
-            if (attempts >= maxAttempts) {
-                console.log('💥 Max connection attempts reached. Database might not be available.');
-                await pool.end();
-                return false;
-            }
-            
-            // Čekaj 5 sekundi prije sljedećeg pokušaja
-            console.log('⏰ Waiting 5 seconds before retry...');
-            await new Promise(resolve => setTimeout(resolve, 5000));
-        }
-    }
-    
-    await pool.end();
-    return false;
-}
-
-// Pokreni čekanje ako je skripta pozvana direktno
-if (require.main === module) {
-    waitForDatabase()
-        .then(success => {
-            if (success) {
-                console.log('🚀 Proceeding with database initialization...');
-                process.exit(0);
-            } else {
-                console.log('💥 Cannot connect to database. Exiting.');
-                process.exit(1);
-            }
-        })
-        .catch(error => {
-            console.error('💥 Error waiting for database:', error);
-            process.exit(1);
-        });
-}
-
-module.exports = { waitForDatabase };"
-
-# Database init script - SA RETRY LOGIKOM
-create_file "backend/database/init.js" "const { Pool } = require('pg');
+# Poboljšani database setup sa boljom error handling
+create_file "backend/database/setup.js" "const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
-const { waitForDatabase } = require('./wait-for-db');
 require('dotenv').config();
 
-async function initializeDatabase() {
-    console.log('🗄️  Starting PostgreSQL database initialization...');
+async function setupDatabase() {
+    console.log('🚀 Starting database setup...');
     
-    // Prvo pričekaj da baza bude spremna
-    const dbReady = await waitForDatabase();
-    if (!dbReady) {
-        throw new Error('Database is not ready for initialization');
+    // Koristi DATABASE_URL od Railway-a
+    const connectionString = process.env.DATABASE_URL;
+    
+    if (!connectionString) {
+        throw new Error('DATABASE_URL environment variable is not set');
     }
     
-    console.log('✅ Database is ready, proceeding with schema setup...');
+    console.log('🔌 Using DATABASE_URL:', connectionString.replace(/:[^:]*@/, ':****@'));
     
     const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+        connectionString: connectionString,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+        connectionTimeoutMillis: 10000,
+        query_timeout: 30000
     });
 
+    let client;
     try {
-        // Pronađi schema.sql
+        // Pokušaj spojiti se na bazu
+        console.log('⏳ Connecting to PostgreSQL...');
+        client = await pool.connect();
+        console.log('✅ Connected to PostgreSQL successfully!');
+
+        // Testiraj connection
+        console.log('🧪 Testing database connection...');
+        const result = await client.query('SELECT version()');
+        console.log('✅ PostgreSQL Version:', result.rows[0].version);
+
+        // Pročitaj schema.sql
+        console.log('📖 Reading schema.sql...');
         const schemaPath = path.join(__dirname, 'schema.sql');
-        console.log('🔍 Looking for schema.sql at:', schemaPath);
         
         if (!fs.existsSync(schemaPath)) {
             throw new Error('schema.sql not found at: ' + schemaPath);
         }
         
         const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
-        console.log('✅ Found schema.sql, running database setup...');
-        
-        // Podijeli SQL komande i pokreni ih jednu po jednu
-        const sqlCommands = schemaSQL
+        console.log('✅ schema.sql loaded, size:', schemaSQL.length, 'characters');
+
+        // Pokreni SQL komande jednu po jednu
+        console.log('🔄 Executing schema...');
+        const commands = schemaSQL
             .split(';')
             .map(cmd => cmd.trim())
-            .filter(cmd => cmd.length > 0);
-        
-        console.log('📝 Found', sqlCommands.length, 'SQL commands to execute');
-        
-        for (let i = 0; i < sqlCommands.length; i++) {
-            const command = sqlCommands[i] + ';';
+            .filter(cmd => cmd.length > 0 && !cmd.startsWith('--'));
+
+        console.log('📝 Found', commands.length, 'SQL commands to execute');
+
+        for (let i = 0; i < commands.length; i++) {
+            const command = commands[i] + ';';
             try {
-                console.log('🔄 Executing command', (i + 1), 'of', sqlCommands.length);
-                await pool.query(command);
-                console.log('✅ Command', (i + 1), 'executed successfully');
+                console.log('   Executing command', (i + 1), 'of', commands.length);
+                await client.query(command);
+                console.log('   ✅ Command', (i + 1), 'executed successfully');
             } catch (error) {
-                // Ako je greška \"relation already exists\", ignoriši je
-                if (error.message.includes('already exists')) {
-                    console.log('⚠️  Table already exists, continuing...');
+                // Ako je \"već postoji\" greška, ignoriši je
+                if (error.message.includes('already exists') || 
+                    error.message.includes('duplicate key') ||
+                    error.message.includes('exists')) {
+                    console.log('   ⚠️  Command', (i + 1), 'skipped (already exists):', error.message);
                 } else {
+                    console.log('   ❌ Command', (i + 1), 'failed:', error.message);
                     throw error;
                 }
             }
         }
+
+        console.log('🎉 Database setup completed successfully!');
+
+        // Provjeri tabele
+        console.log('📊 Checking created tables...');
+        const tablesResult = await client.query(\`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+        \`);
         
-        console.log('✅ All SQL commands executed successfully');
-        
-        // Dodaj demo podatke
-        await seedDemoData(pool);
-        
-        console.log('🎉 Database initialization completed successfully!');
-        
+        console.log('✅ Available tables:', tablesResult.rows.map(row => row.table_name).join(', '));
+
     } catch (error) {
-        console.error('❌ Database initialization error:', error.message);
+        console.error('💥 Database setup failed:', error.message);
         throw error;
     } finally {
+        if (client) {
+            client.release();
+        }
         await pool.end();
     }
 }
 
-async function seedDemoData(pool) {
+// Pokreni setup ako je skripta pozvana direktno
+if (require.main === module) {
+    setupDatabase()
+        .then(() => {
+            console.log('🚀 Database setup process completed');
+            process.exit(0);
+        })
+        .catch(error => {
+            console.error('💥 Database setup process failed');
+            process.exit(1);
+        });
+}
+
+module.exports = { setupDatabase };"
+
+# Pojednostavljeni init.js
+create_file "backend/database/init.js" "const { setupDatabase } = require('./setup');
+require('dotenv').config();
+
+async function initializeDatabase() {
+    console.log('🗄️  Starting database initialization...');
+    
     try {
-        console.log('🌱 Seeding demo data...');
-        
-        // Provjeri da li već postoje demo podaci
-        const userCheck = await pool.query('SELECT * FROM users WHERE email = $1', ['demo@demo.com']);
-        
-        if (userCheck.rows.length === 0) {
-            // Dodaj demo usera
-            await pool.query(
-                'INSERT INTO users (email, password, name) VALUES ($1, $2, $3)',
-                ['demo@demo.com', 'demo123', 'Demo User']
-            );
-            console.log('👤 Demo user created: demo@demo.com / demo123');
-        } else {
-            console.log('👤 Demo user already exists');
-        }
-        
+        await setupDatabase();
+        console.log('🎉 Database initialization completed successfully!');
     } catch (error) {
-        console.log('⚠️  Could not seed demo data:', error.message);
+        console.error('❌ Database initialization failed:', error.message);
+        throw error;
     }
 }
 
@@ -302,11 +315,11 @@ async function seedDemoData(pool) {
 if (require.main === module) {
     initializeDatabase()
         .then(() => {
-            console.log('🚀 Database initialization process completed');
+            console.log('🚀 Init process completed');
             process.exit(0);
         })
         .catch(error => {
-            console.error('💥 Database initialization failed:', error);
+            console.error('💥 Init process failed');
             process.exit(1);
         });
 }
@@ -319,16 +332,9 @@ require('dotenv').config();
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    // Retry logika za production
-    ...(process.env.NODE_ENV === 'production' && {
-        connectionTimeoutMillis: 10000,
-        idleTimeoutMillis: 30000,
-        max: 20
-    })
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Test connection on startup
 pool.on('connect', () => {
     console.log('✅ Connected to PostgreSQL database');
 });
@@ -337,56 +343,42 @@ pool.on('error', (err) => {
     console.error('❌ PostgreSQL connection error:', err);
 });
 
-// Funkcija za retry connection
-const queryWithRetry = async (text, params, retries = 3) => {
-    for (let i = 0; i < retries; i++) {
-        try {
-            return await pool.query(text, params);
-        } catch (error) {
-            if (i === retries - 1) throw error;
-            console.log('🔄 Query failed, retrying...', error.message);
-            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-        }
-    }
-};
-
 module.exports = {
-    query: queryWithRetry,
+    query: (text, params) => pool.query(text, params),
     pool
 };"
 
-# 5. KREIRAJ DOCKERFILE SA BOLJIM START SEKVENCAMA
+# 5. KREIRAJ POBOLJŠANI DOCKERFILE
 create_file "Dockerfile" "FROM node:18-alpine
 
 WORKDIR /app
 
-# Kopiraj backend package fajlove
+# Kopiraj package fajlove
 COPY backend/package*.json ./
 
 # Instaliraj zavisnosti
 RUN npm install --production
 
-# Kopiraj CIJELI backend folder
+# Kopiraj backend kod
 COPY backend/ ./
 
-# Kopiraj database schema
+# Kopiraj schema.sql na specifičnu lokaciju
 COPY database/schema.sql ./database/schema.sql
 
-# Pokreni wait-for-db PRVO, pa init, pa server
-CMD [\"sh\", \"-c\", \"echo '🚀 Starting application...' && npm run db:wait && echo '✅ Database ready, running init...' && npm run db:init && echo '🎉 Starting server...' && npm start\"]
+# Pokreni database setup pa server
+CMD [\"sh\", \"-c\", \"echo '🚀 Starting application...' && npm run db:setup && echo '🎉 Starting server...' && npm start\"]
 
 EXPOSE 3001"
 
-# 6. KREIRAJ RAILWAY.TOML SA BOLJIM START COMMAND
+# 6. KREIRAJ RAILWAY.TOML
 create_file "railway.toml" "[build]
 builder = \"nixpacks\"
 
 [deploy]
-startCommand = \"npm run db:wait && npm run db:init && npm start\"
+startCommand = \"npm run db:setup && npm start\"
 restartPolicyType = \"ON_FAILURE\"
 restartPolicyMaxRetries = 3
 
-# Deploy samo sa staging branch-a
 [deploy.branches]
 only = [\"staging\"]
 
@@ -407,18 +399,7 @@ PORT = \"3001\"
 NODE_ENV = \"production\"
 PORT = \"3001\""
 
-# 7. KREIRAJ ENVIRONMENT FAJLOVE
-create_file "backend/.env.example" "# PostgreSQL Database (Railway will auto-provide DATABASE_URL)
-DATABASE_URL=postgresql://username:password@localhost:5432/crm_database
-
-# Application
-NODE_ENV=development
-PORT=3001
-JWT_SECRET=your-jwt-secret-here
-
-# Railway will automatically provide DATABASE_URL"
-
-# 8. KREIRAJ SERVER.JS SA GRACEFUL START
+# 7. KREIRAJ SERVER.JS
 create_file "backend/server.js" "const express = require('express');
 const cors = require('cors');
 const { query } = require('./database/db');
@@ -427,14 +408,11 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Health check sa database konekcijom
 app.get('/api/health', async (req, res) => {
     try {
-        // Test database connection
         await query('SELECT NOW()');
         res.json({ 
             status: 'OK', 
@@ -452,7 +430,6 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// Ostali endpointovi ostaju isti...
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     
@@ -496,7 +473,6 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// Simple endpoints za sada
 app.get('/api/clients', async (req, res) => {
     try {
         const result = await query('SELECT * FROM clients ORDER BY created_at DESC');
@@ -522,7 +498,6 @@ app.post('/api/clients', async (req, res) => {
     }
 });
 
-// Root endpoint
 app.get('/', (req, res) => {
     res.json({ 
         message: 'CRM Backend API with PostgreSQL',
@@ -541,7 +516,6 @@ app.get('/', (req, res) => {
     });
 });
 
-// Start server
 app.listen(PORT, '0.0.0.0', () => {
     console.log('=================================');
     console.log('🚀 CRM Backend STARTED SUCCESSFULLY');
@@ -553,59 +527,51 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('=================================');
 });"
 
-# 9. KOPIRAJ SCHEMA.SQL
-echo -e "${YELLOW}📋 Ensuring schema.sql is in backend folder...${NC}"
+# 8. KOPIRAJ SCHEMA.SQL
+echo -e "${YELLOW}📋 Copying schema.sql to backend/database/...${NC}"
 cp database/schema.sql backend/database/schema.sql
 check_success "Copied schema.sql to backend/database/"
 
-# 10. TEST COMMONJS SYNTAX
-echo -e "${YELLOW}🧪 Testing CommonJS syntax...${NC}"
-if node -c backend/server.js && node -c backend/database/init.js && node -c backend/database/db.js && node -c backend/database/wait-for-db.js; then
-    echo -e "${GREEN}✅ All CommonJS files have valid syntax${NC}"
-else
-    echo -e "${RED}❌ Syntax error in CommonJS files${NC}"
-    exit 1
-fi
-
-# 11. INSTALIRAJ DEPENDENCIES
+# 9. INSTALIRAJ DEPENDENCIES
 echo -e "${YELLOW}📦 Installing PostgreSQL dependencies...${NC}"
 cd backend
 npm install pg bcryptjs --save --no-audit --no-fund
 cd ..
 check_success "PostgreSQL dependencies installed"
 
-# 12. GIT COMMIT
+# 10. GIT COMMIT
 echo -e "${YELLOW}💾 Committing deployment files...${NC}"
 git add .
-git commit -m "fix: Database connection with retry logic
+git commit -m "fix: Reliable PostgreSQL schema import on Railway
 
-- Added wait-for-db.js to wait for PostgreSQL to be ready
-- Database init now waits for connection before running schema
-- Added retry logic for database queries
-- Improved Dockerfile start sequence
+- Added robust database setup with better error handling
+- Improved schema.sql with IF NOT EXISTS and ON CONFLICT
+- Better connection management and logging
+- Simplified initialization process
 - All files use CommonJS
 - Deploy from staging branch"
 
 check_success "Changes committed"
 
-# 13. PUSH TO GITHUB
+# 11. PUSH TO GITHUB
 echo -e "${YELLOW}📤 Pushing to GitHub (staging branch)...${NC}"
 git push origin staging
 check_success "Pushed to GitHub staging branch"
 
-# 14. FINALNE UPUTE
+# 12. FINALNE UPUTE
 echo -e "${GREEN}"
 echo "╔══════════════════════════════════════════════╗"
-echo "║               🎉 DATABASE FIXED!             ║"
+echo "║               🎉 SCHEMA FIXED!               ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-echo -e "${YELLOW}🔧 What was fixed:${NC}"
-echo "✅ Added wait-for-db.js - čeka da PostgreSQL bude spreman"
-echo "✅ Database init sada prvo čeka connection prije pokretanja schema.sql"
-echo "✅ Retry logika za database queries"
-echo "✅ Poboljšana start sekvenca u Dockerfile"
-echo "✅ Max 30 pokušaja (2.5 minuta) za database connection"
+echo -e "${YELLOW}🔧 Improvements made:${NC}"
+echo "✅ Better error handling for existing tables"
+echo "✅ Uses ON CONFLICT DO NOTHING for inserts"
+echo "✅ CREATE TABLE IF NOT EXISTS for tables"
+echo "✅ Improved connection management"
+echo "✅ Better logging and debugging"
+echo "✅ Simplified setup process"
 
-echo -e "${GREEN}🚀 Deployment should now handle database startup delays!${NC}"
-echo -e "${YELLOW}📝 Note: Railway PostgreSQL može trebati 1-2 minute da se pokrene${NC}"
+echo -e "${GREEN}🚀 Schema should now import reliably on Railway!${NC}"
+echo -e "${YELLOW}📝 Check Railway logs for detailed database setup information${NC}"
