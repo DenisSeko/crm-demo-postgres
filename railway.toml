@@ -7,14 +7,25 @@ startCommand = "cd backend && npm start"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 
+# 👇 DEPLOY BOTH BRANCHES TO DIFFERENT ENVIRONMENTS
+branches = ["staging", "development"]
+
 [[services]]
 name = "web"
 run = "cd backend && npm start"
 
-[environments.production.variables]
-NODE_ENV = "production"
-PORT = "3001"
+# Staging Environment (staging branch)
+[environments.staging]
+branch = "staging"
+variables = { 
+    NODE_ENV = "production", 
+    PORT = "3001"
+}
 
-[environments.staging.variables]
-NODE_ENV = "production"
-PORT = "3001"
+# Development Environment (development branch)  
+[environments.development]
+branch = "development"
+variables = { 
+    NODE_ENV = "development", 
+    PORT = "3001"
+}
