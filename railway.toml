@@ -1,20 +1,24 @@
 [build]
 builder = "nixpacks"
-buildCommand = "cd backend && npm install"
 
 [deploy]
-startCommand = "cd backend && npm start"
+startCommand = "npm run db:init && npm start"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 
 [[services]]
 name = "web"
-run = "cd backend && npm start"
+run = "npm start"
+
+[[services]]
+name = "database"
+type = "postgresql"
+plan = "hobby"
 
 [environments.production.variables]
 NODE_ENV = "production"
 PORT = "3001"
 
-[environments.staging.variables]
+[environments.staging.variables] 
 NODE_ENV = "production"
 PORT = "3001"
