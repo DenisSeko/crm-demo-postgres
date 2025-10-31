@@ -12,7 +12,7 @@ echo "╔═══════════════════════�
 echo "║           🚀 CRM DEPLOYMENT SCRIPT           ║"
 echo "║        Vercel (Frontend) + Railway (Backend) ║"
 echo "║           POSTGRESQL + schema.sql            ║"
-echo "║               STAGING BRANCH                 ║"
+echo "║               ES MODULES FIX                 ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -105,13 +105,13 @@ else
     echo -e "${GREEN}✅ frontend/.env.production already exists${NC}"
 fi
 
-# 5. KREIRAJ BACKEND SA POSTGRESQL PODRŠKOM
-echo -e "${YELLOW}🔧 Preparing backend with PostgreSQL...${NC}"
+# 5. KREIRAJ BACKEND SA POSTGRESQL PODRŠKOM - ES MODULES
+echo -e "${YELLOW}🔧 Preparing backend with PostgreSQL (ES Modules)...${NC}"
 
 # Kreiraj database folder ako ne postoji
 mkdir -p backend/database
 
-# backend/package.json sa PostgreSQL dependency
+# backend/package.json sa PostgreSQL dependency - BEZ "type": "module"
 if [ ! -f "backend/package.json" ]; then
     create_file "backend/package.json" '{
   "name": "crm-backend",
@@ -139,22 +139,30 @@ if [ ! -f "backend/package.json" ]; then
   "license": "MIT"
 }'
 else
-    echo -e "${YELLOW}📦 Updating backend/package.json with PostgreSQL...${NC}"
-    # Ažuriraj postojeći package.json sa PostgreSQL dependency
-    if grep -q "pg" backend/package.json; then
-        echo -e "${GREEN}✅ PostgreSQL dependency already exists${NC}"
-    else
+    echo -e "${YELLOW}📦 Updating backend/package.json...${NC}"
+    # Ukloni "type": "module" ako postoji
+    if grep -q "\"type\": \"module\"" backend/package.json; then
+        echo -e "${YELLOW}🔄 Removing 'type: module' from package.json...${NC}"
+        sed -i '/"type": "module"/d' backend/package.json
+        check_success "Removed type: module"
+    fi
+    
+    # Dodaj PostgreSQL dependencies ako ne postoje
+    if ! grep -q "pg" backend/package.json; then
         echo -e "${YELLOW}➕ Adding PostgreSQL dependencies...${NC}"
         # Ovo je pojednostavljeno - u praksi bi koristili jq za JSON manipulaciju
         echo -e "${YELLOW}⚠️  Please manually add 'pg' and 'bcryptjs' to backend/package.json dependencies${NC}"
     fi
 fi
 
-# Database init script koji koristi tvoj schema.sql
-create_file "backend/database/init.js" "const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-require('dotenv').config();
+# Database init script - ES MODULES verzija
+create_file "backend/database/init.js" "import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function initializeDatabase() {
     console.log('🗄️  Initializing PostgreSQL database from schema.sql...');
@@ -211,15 +219,14 @@ async function seedDemoData(pool) {
 }
 
 // Pokreni inicijalizaciju ako je skripta pozvana direktno
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
     initializeDatabase().catch(console.error);
 }
 
-module.exports = { initializeDatabase };"
+export { initializeDatabase };"
 
-# Database connection helper
-create_file "backend/database/db.js" "const { Pool } = require('pg');
-require('dotenv').config();
+# Database connection helper - ES MODULES
+create_file "backend/database/db.js" "import { Pool } from 'pg';
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -235,12 +242,10 @@ pool.on('error', (err) => {
     console.error('❌ PostgreSQL connection error:', err);
 });
 
-module.exports = {
-    query: (text, params) => pool.query(text, params),
-    pool
-};"
+export const query = (text, params) => pool.query(text, params);
+export { pool };"
 
-# 6. KREIRAJ DOCKERFILE ZA RAILWAY - POPRAVLJENO ZA BACKEND FOLDER
+# 6. KREIRAJ DOCKERFILE ZA RAILWAY
 create_file "Dockerfile" "FROM node:18-alpine
 
 WORKDIR /app
@@ -261,7 +266,7 @@ CMD [\"sh\", \"-c\", \"npm run db:init && npm start\"]
 
 EXPOSE 3001"
 
-# 7. KREIRAJ RAILWAY.TOML SA POSTGRESQL - AŽURIRANO ZA STAGING
+# 7. KREIRAJ RAILWAY.TOML SA POSTGRESQL
 create_file "railway.toml" "[build]
 builder = \"nixpacks\"
 
@@ -302,13 +307,13 @@ JWT_SECRET=your-jwt-secret-here
 
 # Railway will automatically provide DATABASE_URL"
 
-# 9. KREIRAJ AŽURIRANI SERVER.JS SA POSTGRESQL
-if [ ! -f "backend/server.js" ] || grep -q "in-memory" "backend/server.js"; then
-    echo -e "${YELLOW}🔄 Updating server.js with PostgreSQL support...${NC}"
-    create_file "backend/server.js" "const express = require('express');
-const cors = require('cors');
-const { query } = require('./database/db');
-require('dotenv').config();
+# 9. KREIRAJ AŽURIRANI SERVER.JS - ES MODULES
+if [ ! -f "backend/server.js" ] || grep -q "require(" "backend/server.js"; then
+    echo -e "${YELLOW}🔄 Updating server.js with ES Modules...${NC}"
+    create_file "backend/server.js" "import express from 'express';
+import cors from 'cors';
+import { query } from './database/db.js';
+import { initializeDatabase } from './database/init.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -511,7 +516,7 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });"
 else
-    echo -e "${GREEN}✅ backend/server.js already exists with PostgreSQL support${NC}"
+    echo -e "${GREEN}✅ backend/server.js already exists with ES Modules support${NC}"
 fi
 
 # 10. TEST BUILD FRONTENDA
@@ -522,19 +527,20 @@ npm run build
 cd ..
 check_success "Frontend build test passed"
 
-# 11. GIT COMMIT - SA VIDLJIVIM OUTPUT-OM
+# 11. GIT COMMIT
 echo -e "${YELLOW}💾 Committing deployment files...${NC}"
 echo -e "${YELLOW}📊 Git status before commit:${NC}"
 git status
 
 git add .
-git commit -m "feat: PostgreSQL deployment with schema.sql
+git commit -m "feat: PostgreSQL deployment with ES Modules
 
 - PostgreSQL database integration
+- ES Modules support (import/export)
 - Automatic schema.sql execution on deploy
 - Database initialization script
 - Railway with PostgreSQL service
-- Docker configuration (fixed for backend folder)
+- Fixed Dockerfile for backend folder
 - Demo user: demo@demo.com / demo123
 - Deploy from staging branch"
 
@@ -552,16 +558,16 @@ echo "║               📊 CREATED FILES               ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-echo -e "${BLUE}🎯 New files created:${NC}"
-echo "├── 📄 backend/database/init.js"
-echo "├── 📄 backend/database/db.js" 
-echo "├── 📄 Dockerfile (FIXED for backend folder)"
+echo -e "${BLUE}🎯 New files (ES Modules):${NC}"
+echo "├── 📄 backend/database/init.js (ES Modules)"
+echo "├── 📄 backend/database/db.js (ES Modules)" 
+echo "├── 📄 Dockerfile"
 echo "├── 📄 railway.toml"
 echo "└── 📄 backend/.env.example"
 
 echo -e "${BLUE}🔧 Updated files:${NC}"
-echo "├── 📄 backend/package.json (PostgreSQL dependencies)"
-echo "└── 📄 backend/server.js (PostgreSQL integration)"
+echo "├── 📄 backend/package.json (No 'type: module')"
+echo "└── 📄 backend/server.js (ES Modules)"
 
 echo -e "${GREEN}"
 echo "╔══════════════════════════════════════════════╗"
@@ -573,15 +579,12 @@ echo -e "${YELLOW}🎯 Next steps:${NC}"
 echo "1. Go to Railway: https://railway.app"
 echo "2. Click 'New Project' → 'Deploy from GitHub repo'"
 echo "3. Select your repository"
-echo "4. Railway will automatically deploy from STAGING branch with PostgreSQL!"
+echo "4. Railway will automatically deploy with PostgreSQL!"
 
-echo -e "${GREEN}🚀 Check your GitHub repository - all changes should be visible on STAGING branch now!${NC}"
+echo -e "${GREEN}🚀 ES Modules issue fixed! Now using import/export instead of require()${NC}"
 
-# 14. PROVJERA BRANCH-A
-echo -e "${YELLOW}🔍 Verifying branch setup...${NC}"
+# 14. PROVJERA STRUKTURE
+echo -e "${YELLOW}🔍 Verifying project structure...${NC}"
 echo -e "${BLUE}📋 Current branch: $(git branch --show-current)${NC}"
-echo -e "${BLUE}📁 Project structure:${NC}"
-find . -name "*.js" -o -name "*.json" -o -name "Dockerfile" -o -name "*.toml" | head -20
-
-# HOTFIX
-echo -e "${GREEN}✅ Dockerfile is now properly configured to work with backend/ folder!${NC}"
+echo -e "${BLUE}📁 Backend structure:${NC}"
+find backend -name "*.js" | head -10

@@ -1,7 +1,10 @@
-const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-require('dotenv').config();
+import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function initializeDatabase() {
     console.log('🗄️  Initializing PostgreSQL database from schema.sql...');
@@ -58,8 +61,8 @@ async function seedDemoData(pool) {
 }
 
 // Pokreni inicijalizaciju ako je skripta pozvana direktno
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
     initializeDatabase().catch(console.error);
 }
 
-module.exports = { initializeDatabase };
+export { initializeDatabase };
