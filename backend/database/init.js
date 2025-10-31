@@ -12,11 +12,60 @@ async function initializeDatabase() {
     });
 
     try {
-        // Pročitaj schema.sql fajl
-        const schemaPath = path.join(__dirname, '..', '..', 'database', 'schema.sql');
-        const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
+        // POKUŠAJ RAZLIČITE PUTANJE DO SCHEMA.SQL
+        const possiblePaths = [
+            path.join(__dirname, 'schema.sql'),                    // /app/database/schema.sql
+            path.join(__dirname, '..', 'schema.sql'),              // /app/schema.sql  
+            path.join(__dirname, '..', '..', 'database', 'schema.sql'), // /database/schema.sql
+            '/app/database/schema.sql',                            // Apsolutna putanja u Dockeru
+            '/app/schema.sql',                                     // Apsolutna putanja u Dockeru
+            './database/schema.sql',                               // Relativna putanja
+            './schema.sql'                                         // Relativna putanja
+        ];
         
-        console.log('📖 Running schema.sql...');
+        let schemaPath = null;
+        let schemaSQL = null;
+        
+        // Pronađi schema.sql na bilo kojoj od mogućih putanja
+        for (const possiblePath of possiblePaths) {
+            try {
+                console.log('🔍 Looking for schema.sql at:', possiblePath);
+                if (fs.existsSync(possiblePath)) {
+                    schemaPath = possiblePath;
+                    schemaSQL = fs.readFileSync(possiblePath, 'utf8');
+                    console.log('✅ Found schema.sql at:', schemaPath);
+                    break;
+                }
+            } catch (error) {
+                // Nastavi sa sljedećom putanjom
+                console.log('❌ Not found at:', possiblePath);
+            }
+        }
+        
+        if (!schemaSQL) {
+            console.log('❌ schema.sql not found at any known location');
+            console.log('📁 Current working directory:', process.cwd());
+            console.log('📁 Directory contents:');
+            try {
+                const files = fs.readdirSync('.');
+                console.log('Root:', files);
+                
+                if (fs.existsSync('./database')) {
+                    const dbFiles = fs.readdirSync('./database');
+                    console.log('Database folder:', dbFiles);
+                }
+                
+                if (fs.existsSync('./app')) {
+                    const appFiles = fs.readdirSync('./app');
+                    console.log('App folder:', appFiles);
+                }
+            } catch (error) {
+                console.log('⚠️  Could not read directory structure');
+            }
+            throw new Error('schema.sql not found');
+        }
+        
+        console.log('📖 Running schema.sql from:', schemaPath);
         
         // Pokreni SQL komande iz schema.sql
         await pool.query(schemaSQL);

@@ -12,7 +12,7 @@ echo "╔═══════════════════════�
 echo "║           🚀 CRM DEPLOYMENT SCRIPT           ║"
 echo "║        Vercel (Frontend) + Railway (Backend) ║"
 echo "║           POSTGRESQL + schema.sql            ║"
-echo "║              COMMONJS FIXED                  ║"
+echo "║             FIXED SCHEMA PATH                ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -72,35 +72,39 @@ echo "Frontend exists: $(test -d 'frontend' && echo '✅' || echo '❌')"
 echo "Backend exists: $(test -d 'backend' && echo '✅' || echo '❌')"
 echo "schema.sql exists: $(test -f 'database/schema.sql' && echo '✅' || echo '❌')"
 
-# 4. KREIRAJ FRONTEND DEPLOYMENT FAJLOVE - POPRAVLJENO
+# 4. KREIRAJ FRONTEND DEPLOYMENT FAJLOVE
 echo -e "${YELLOW}🎨 Preparing frontend for Vercel...${NC}"
 
-# frontend/vercel.json - POPRAVLJENA VERZIJA
+# Ukloni stari vercel.json ako postoji
+if [ -f "frontend/vercel.json" ]; then
+    echo -e "${YELLOW}🗑️  Removing old vercel.json...${NC}"
+    rm -f frontend/vercel.json
+fi
+
 create_file "frontend/vercel.json" '{
   "version": 2,
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
-  "framework": "vite",
-  "rewrites": [
+  "builds": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "package.json",
+      "use": "@vercel/static-build"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }'
 
-# frontend/.env.production
 create_file "frontend/.env.production" 'VITE_API_URL=YOUR_RAILWAY_BACKEND_URL_HERE'
 
-# 5. KREIRAJ BACKEND SA POSTGRESQL PODRŠKOM - COMMONJS
-echo -e "${YELLOW}🔧 Preparing backend with PostgreSQL (CommonJS)...${NC}"
+# 5. KREIRAJ BACKEND SA POSTGRESQL PODRŠKOM - POPRAVLJENA PUTANJA
+echo -e "${YELLOW}🔧 Preparing backend with PostgreSQL (Fixed schema path)...${NC}"
 
-# Kreiraj database folder ako ne postoji
 mkdir -p backend/database
 
-# backend/package.json sa PostgreSQL dependency - BEZ "type": "module"
+# backend/package.json
 create_file "backend/package.json" '{
   "name": "crm-backend",
   "version": "1.0.0",
@@ -127,7 +131,7 @@ create_file "backend/package.json" '{
   "license": "MIT"
 }'
 
-# Database init script - COMMONJS verzija
+# Database init script - POPRAVLJENA PUTANJA DO SCHEMA.SQL
 create_file "backend/database/init.js" "const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
@@ -142,11 +146,60 @@ async function initializeDatabase() {
     });
 
     try {
-        // Pročitaj schema.sql fajl
-        const schemaPath = path.join(__dirname, '..', '..', 'database', 'schema.sql');
-        const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
+        // POKUŠAJ RAZLIČITE PUTANJE DO SCHEMA.SQL
+        const possiblePaths = [
+            path.join(__dirname, 'schema.sql'),                    // /app/database/schema.sql
+            path.join(__dirname, '..', 'schema.sql'),              // /app/schema.sql  
+            path.join(__dirname, '..', '..', 'database', 'schema.sql'), // /database/schema.sql
+            '/app/database/schema.sql',                            // Apsolutna putanja u Dockeru
+            '/app/schema.sql',                                     // Apsolutna putanja u Dockeru
+            './database/schema.sql',                               // Relativna putanja
+            './schema.sql'                                         // Relativna putanja
+        ];
         
-        console.log('📖 Running schema.sql...');
+        let schemaPath = null;
+        let schemaSQL = null;
+        
+        // Pronađi schema.sql na bilo kojoj od mogućih putanja
+        for (const possiblePath of possiblePaths) {
+            try {
+                console.log('🔍 Looking for schema.sql at:', possiblePath);
+                if (fs.existsSync(possiblePath)) {
+                    schemaPath = possiblePath;
+                    schemaSQL = fs.readFileSync(possiblePath, 'utf8');
+                    console.log('✅ Found schema.sql at:', schemaPath);
+                    break;
+                }
+            } catch (error) {
+                // Nastavi sa sljedećom putanjom
+                console.log('❌ Not found at:', possiblePath);
+            }
+        }
+        
+        if (!schemaSQL) {
+            console.log('❌ schema.sql not found at any known location');
+            console.log('📁 Current working directory:', process.cwd());
+            console.log('📁 Directory contents:');
+            try {
+                const files = fs.readdirSync('.');
+                console.log('Root:', files);
+                
+                if (fs.existsSync('./database')) {
+                    const dbFiles = fs.readdirSync('./database');
+                    console.log('Database folder:', dbFiles);
+                }
+                
+                if (fs.existsSync('./app')) {
+                    const appFiles = fs.readdirSync('./app');
+                    console.log('App folder:', appFiles);
+                }
+            } catch (error) {
+                console.log('⚠️  Could not read directory structure');
+            }
+            throw new Error('schema.sql not found');
+        }
+        
+        console.log('📖 Running schema.sql from:', schemaPath);
         
         // Pokreni SQL komande iz schema.sql
         await pool.query(schemaSQL);
@@ -194,7 +247,7 @@ if (require.main === module) {
 
 module.exports = { initializeDatabase };"
 
-# Database connection helper - COMMONJS
+# Database connection helper
 create_file "backend/database/db.js" "const { Pool } = require('pg');
 require('dotenv').config();
 
@@ -217,7 +270,7 @@ module.exports = {
     pool
 };"
 
-# 6. KREIRAJ DOCKERFILE ZA RAILWAY
+# 6. KREIRAJ DOCKERFILE - POPRAVLJENO KOPIRANJE SCHEMA.SQL
 create_file "Dockerfile" "FROM node:18-alpine
 
 WORKDIR /app
@@ -230,8 +283,10 @@ RUN npm install --production
 
 # Kopiraj CIJELI backend folder
 COPY backend/ ./
-# Kopiraj database schema
+
+# Kopiraj database schema u DVIJE lokacije za sigurnost
 COPY database/ ./database/
+COPY database/schema.sql ./schema.sql
 
 # Pokreni init skriptu pri pokretanju
 CMD [\"sh\", \"-c\", \"npm run db:init && npm start\"]
@@ -279,7 +334,7 @@ JWT_SECRET=your-jwt-secret-here
 
 # Railway will automatically provide DATABASE_URL"
 
-# 9. KREIRAJ AŽURIRANI SERVER.JS - COMMONJS
+# 9. KREIRAJ SERVER.JS - COMMONJS
 create_file "backend/server.js" "const express = require('express');
 const cors = require('cors');
 const { query } = require('./database/db');
@@ -486,13 +541,10 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });"
 
-# 10. ČIŠĆENJE POSTOJEĆIH ES MODULES FAJLOVA
-echo -e "${YELLOW}🧹 Cleaning up existing ES Modules files...${NC}"
-# Ukloni type: module iz postojećeg package.json ako postoji
-if [ -f "backend/package.json" ] && grep -q "\"type\": \"module\"" "backend/package.json"; then
-    sed -i '/"type": "module"/d' backend/package.json
-    echo -e "${GREEN}✅ Removed 'type: module' from existing package.json${NC}"
-fi
+# 10. KOPIRAJ SCHEMA.SQL U BACKEND FOLDER ZA SIGURNOST
+echo -e "${YELLOW}📋 Copying schema.sql to backend folder for safety...${NC}"
+cp database/schema.sql backend/schema.sql
+check_success "Copied schema.sql to backend folder"
 
 # 11. TEST COMMONJS SYNTAX
 echo -e "${YELLOW}🧪 Testing CommonJS syntax...${NC}"
@@ -500,34 +552,7 @@ if node -c backend/server.js && node -c backend/database/init.js && node -c back
     echo -e "${GREEN}✅ All CommonJS files have valid syntax${NC}"
 else
     echo -e "${RED}❌ Syntax error in CommonJS files${NC}"
-    echo -e "${YELLOW}🔄 Creating simplified versions...${NC}"
-    
-    # Kreiraj pojednostavljene fajlove ako sintaksa ne valja
-    create_file "backend/database/init.js" "const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-
-console.log('✅ Database init script loaded');
-
-async function initializeDatabase() {
-    console.log('🗄️  Starting database initialization...');
-    try {
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-        });
-        
-        // Jednostavnija verzija bez kompleksnog SQL
-        await pool.query('SELECT 1 as test');
-        console.log('✅ Database test successful');
-        await pool.end();
-    } catch (error) {
-        console.log('⚠️  Database init simplified:', error.message);
-    }
-}
-
-module.exports = { initializeDatabase };"
-    
-    echo -e "${GREEN}✅ Created simplified CommonJS files${NC}"
+    exit 1
 fi
 
 # 12. INSTALIRAJ DEPENDENCIES
@@ -547,25 +572,19 @@ check_success "Frontend build test passed"
 
 # 14. GIT COMMIT
 echo -e "${YELLOW}💾 Committing deployment files...${NC}"
-echo -e "${YELLOW}📊 Git status before commit:${NC}"
-git status
-
 git add .
-git commit -m "feat: Complete PostgreSQL deployment setup
+git commit -m "fix: Database initialization with correct schema path
 
-- PostgreSQL database integration with CommonJS
-- Automatic schema.sql execution on deploy
-- Database initialization script
-- Railway with PostgreSQL service
-- Fixed Vercel config (no build warnings)
-- Docker configuration for backend folder
-- Demo user: demo@demo.com / demo123
-- All files use CommonJS (no ES modules)
+- Fixed multiple schema.sql path locations
+- Dockerfile now copies schema.sql to multiple locations
+- Database init script searches for schema.sql in multiple paths
+- Added debug logging for file locations
+- All files use CommonJS
 - Deploy from staging branch"
 
 check_success "Changes committed"
 
-# 15. PUSH TO GITHUB - NA STAGING BRANCH
+# 15. PUSH TO GITHUB
 echo -e "${YELLOW}📤 Pushing to GitHub (staging branch)...${NC}"
 git push origin staging
 check_success "Pushed to GitHub staging branch"
@@ -573,65 +592,18 @@ check_success "Pushed to GitHub staging branch"
 # 16. FINALNE UPUTE
 echo -e "${GREEN}"
 echo "╔══════════════════════════════════════════════╗"
-echo "║               📊 DEPLOYMENT SUMMARY          ║"
+echo "║               🎉 SCHEMA PATH FIXED!          ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-echo -e "${BLUE}🎯 Created files (CommonJS):${NC}"
-echo "├── 📄 backend/package.json (No 'type: module')"
-echo "├── 📄 backend/server.js (CommonJS)"
-echo "├── 📄 backend/database/init.js (CommonJS)"
-echo "├── 📄 backend/database/db.js (CommonJS)"
-echo "├── 📄 Dockerfile"
-echo "├── 📄 railway.toml"
-echo "├── 📄 frontend/vercel.json (Fixed)"
-echo "└── 📄 backend/.env.example"
+echo -e "${YELLOW}🔧 What was fixed:${NC}"
+echo "✅ Database init now searches for schema.sql in multiple locations:"
+echo "   - /app/database/schema.sql"
+echo "   - /app/schema.sql"  
+echo "   - ./database/schema.sql"
+echo "   - ./schema.sql"
+echo "✅ Dockerfile copies schema.sql to multiple locations"
+echo "✅ Added debug logging to find schema.sql"
+echo "✅ Backed up schema.sql to backend folder"
 
-echo -e "${GREEN}"
-echo "╔══════════════════════════════════════════════╗"
-echo "║               ✅ DEPLOYMENT READY            ║"
-echo "╚══════════════════════════════════════════════╝"
-echo -e "${NC}"
-
-echo -e "${YELLOW}🚀 DEPLOYMENT STEPS:${NC}"
-echo ""
-echo -e "${BLUE}1. BACKEND (Railway):${NC}"
-echo "   • Go to: https://railway.app"
-echo "   • 'New Project' → 'Deploy from GitHub repo'"
-echo "   • Select your repository"
-echo "   • Railway will auto-deploy from staging branch"
-echo ""
-echo -e "${BLUE}2. FRONTEND (Vercel):${NC}"
-echo "   • Go to: https://vercel.com"
-echo "   • 'Add New Project' → Import GitHub repo"
-echo "   • Configure:"
-echo "     - Root Directory: ${GREEN}frontend${NC}"
-echo "     - Framework: ${GREEN}Vite${NC}"
-echo "     - Build Command: ${GREEN}npm run build${NC}"
-echo "     - Output Directory: ${GREEN}dist${NC}"
-echo "   • Add Environment Variable:"
-echo "     - Name: ${GREEN}VITE_API_URL${NC}"
-echo "     - Value: ${GREEN}YOUR_RAILWAY_BACKEND_URL${NC}"
-echo ""
-echo -e "${BLUE}3. TEST YOUR APP:${NC}"
-echo "   • Backend Health: ${GREEN}https://your-app.up.railway.app/api/health${NC}"
-echo "   • Demo Login: ${GREEN}demo@demo.com${NC} / ${GREEN}demo123${NC}"
-echo ""
-echo -e "${GREEN}✅ CommonJS configuration guaranteed - No ES module errors!${NC}"
-echo -e "${YELLOW}📝 Note: Railway will automatically:${NC}"
-echo "   • Create PostgreSQL database"
-echo "   • Run your schema.sql"
-echo "   • Start the backend server"
-
-# 17. PROVJERA STRUKTURE
-echo -e "${YELLOW}🔍 Final project structure:${NC}"
-echo -e "${BLUE}📋 Current branch: $(git branch --show-current)${NC}"
-echo -e "${BLUE}📁 Key files:${NC}"
-ls -la backend/ | grep -E "(package.json|server.js|database)"
-ls -la | grep -E "(Dockerfile|railway.toml|database)"
-
-echo -e "${GREEN}"
-echo "╔══════════════════════════════════════════════╗"
-echo "║               🎉 DEPLOYMENT SUCCESS!         ║"
-echo "╚══════════════════════════════════════════════╝"
-echo -e "${NC}"
+echo -e "${GREEN}🚀 Deployment should now find schema.sql successfully!${NC}"
