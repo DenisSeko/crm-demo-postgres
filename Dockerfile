@@ -11,7 +11,7 @@ RUN npm install --production
 # Kopiraj backend kod
 COPY backend/ ./
 
-# Prvo čekaj na bazu, pa pokreni setup
-CMD ["sh", "-c", "echo '🚀 Starting application...' && npm run start:with-db"]
+# POKRENI SERVER ODMAH - ovo je KLJUČNO!
+CMD ["node", "server.js"]
 
 EXPOSE 3001
