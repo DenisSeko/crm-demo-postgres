@@ -1,31 +1,28 @@
 [build]
 builder = "nixpacks"
-buildCommand = "cd backend && npm install"
 
 [deploy]
-startCommand = "cd backend && npm start"
+startCommand = "npm run db:init && npm start"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 
-# 👇 DEPLOY BOTH BRANCHES TO DIFFERENT ENVIRONMENTS
-branches = ["staging", "development"]
+# Deploy samo sa staging branch-a
+[deploy.branches]
+only = ["staging"]
 
 [[services]]
 name = "web"
-run = "cd backend && npm start"
+run = "npm start"
 
-# Staging Environment (staging branch)
-[environments.staging]
-branch = "staging"
-variables = { 
-    NODE_ENV = "production", 
-    PORT = "3001"
-}
+[[services]]
+name = "database"
+type = "postgresql"
+plan = "hobby"
 
-# Development Environment (development branch)  
-[environments.development]
-branch = "development"
-variables = { 
-    NODE_ENV = "development", 
-    PORT = "3001"
-}
+[environments.production.variables]
+NODE_ENV = "production"
+PORT = "3001"
+
+[environments.staging.variables] 
+NODE_ENV = "production"
+PORT = "3001"
