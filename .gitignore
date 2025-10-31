@@ -1,71 +1,8 @@
-# Dependencies
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Environment variables - SAMO PRIVATNE
-.env.local
-.env.development
-*.env.backup
-
-# Build outputs - NE IGNORIŠE SE dist/ jer je potreban za deployment
-# dist/
-build/
-*.tgz
-*.tar.gz
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
+.env
 .DS_Store
-Thumbs.db
-
-# Logs
-logs/
-*.log
-
-# Runtime data
-pids/
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage/
-
-# Dependency directories
-jspm_packages/
-
-# Optional npm cache directory
-.npm
-
-# Optional REPL history
-.node_repl_history
-
-# Output of "npm pack"
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# DOZVOLJENI FAJLOVI - NE IGNORIRAJU SE:
-# .env.production (frontend)
-# vercel.json
-# railway.json
-# railway.toml
-# dist/ (build output)
-
-# Privremeni fajlovi
 *.tmp
 *.temp
-.cache/
-.tmp/
-
-# OS specific
-ehthumbs.db
-[Tt]humbs.db
