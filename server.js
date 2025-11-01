@@ -9,6 +9,17 @@ import path from 'path';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// ⭐⭐⭐ GLOBALNI DATABASE POOL - OVO JE KLJUČNO! ⭐⭐⭐
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
+
+// Dodajte error handling za pool
+pool.on('error', (err) => {
+    console.error('💥 Database pool error:', err);
+});
+
 // ⭐⭐⭐ DATABASE INIT - JEDNOSTAVNO I EFIKASNO ⭐⭐⭐
 
 // Ažurirane CORS postavke za production i development
@@ -24,14 +35,11 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+app.use(express.json());
+
 async function initializeDatabase() {
     console.log('🔧 Initializing database...');
     
-    const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: { rejectUnauthorized: false }
-    });
-
     try {
         const client = await pool.connect();
         
@@ -64,8 +72,6 @@ async function initializeDatabase() {
         client.release();
     } catch (error) {
         console.error('❌ Database init error:', error.message);
-    } finally {
-        await pool.end();
     }
 }
 
@@ -110,14 +116,6 @@ async function createBasicSchema(client) {
 initializeDatabase();
 
 // ⭐⭐⭐ KRAJ DATABASE INIT ⭐⭐⭐
-
-// Ostali kod ide ovdje...
-app.use(cors());
-app.use(express.json());
-
-app.get('/', (req, res) => {
-    res.json({ message: 'CRM API is running!' });
-});
 
 // Osnovni endpoint
 app.get('/', (req, res) => {
@@ -479,10 +477,4 @@ app.listen(PORT, async () => {
   if (process.env.NODE_ENV === 'production') {
     console.log(`🔗 Frontend URL: https://crm-stgaing-app.vercel.app`);
   }
-  
-  // Testiraj konekciju pri pokretanju
-//   const dbConnected = await testDatabaseConnection();
-//   if (!dbConnected) {
-//     console.log('❌ WARNING: Cannot connect to database!');
-//   }
 });
