@@ -23,9 +23,7 @@ pool.on('error', (err) => {
 // ⭐⭐⭐ CORS MIDDLEWARE ⭐⭐⭐
 app.use(cors({
   origin: [
-    'https://crm-basic-9r093y1se-denis-projects-e03958c1.vercel.app',
-    'https://crm-stgaing-app.vercel.app',
-    'https://crm-staging-app.vercel.app',
+    'https://crm-stagaing-app.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000'
   ],
