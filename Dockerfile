@@ -12,6 +12,6 @@ RUN npm install --production --silent
 COPY . ./
 
 # ✅ ULTRA-FAST START: Use start.js which launches immediately
-CMD ["node", "start.js"]
+CMD ["node", "start"]
 
 EXPOSE 3001
