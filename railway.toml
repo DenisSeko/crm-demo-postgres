@@ -7,15 +7,6 @@ restartPolicyType = "ON_FAILURE"
 healthCheckPath = "/api/health"
 healthCheckTimeout = 10
 
-[[services]]
-name = "web"
-run = "node start.js"
-
-[[services]]
-name = "postgres"
-type = "postgresql"
-plan = "hobby"
-
 [variables]
 NODE_ENV = "production"
 PORT = "3001"
