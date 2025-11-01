@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
-    "start": "node start.js",
+    "start": "node server.js",
     "db:init": "node database/init.js"
   },
   "dependencies": {
