@@ -1,6 +1,6 @@
 // server.js
-import express from 'express';
 import cors from 'cors';
+import express from 'express';
 import pkg from 'pg';
 const { Pool } = pkg;
 import fs from 'fs';
@@ -23,17 +23,28 @@ pool.on('error', (err) => {
 // ⭐⭐⭐ CORS MIDDLEWARE ⭐⭐⭐
 app.use(cors({
   origin: [
+    'https://crm-basic-9r093y1se-denis-projects-e03958c1.vercel.app',
     'https://crm-stgaing-app.vercel.app',
-    'https://crm-staging-app.vercel.app', 
+    'https://crm-staging-app.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
+// Explicit preflight handling
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin);
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.status(204).send();
+});
+
 app.use(express.json());
+app.options('*', cors());
 
 // ⭐⭐⭐ POBOLJŠANI DATABASE INIT ⭐⭐⭐
 async function initializeDatabase() {
