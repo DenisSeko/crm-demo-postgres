@@ -90,7 +90,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { authAPI, healthAPI } from "@/services/api"
+import { authAPI, healthAPI } from "services/api"
 
 const route = useRoute()
 const router = useRouter()
