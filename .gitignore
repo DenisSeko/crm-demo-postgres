@@ -5,13 +5,13 @@ yarn-debug.log*
 yarn-error.log*
 
 # Environment variables
-.env
-.env.local
-.env.production
+#.env
+#.env.local
+#.env.production
 
 # Build outputs
-dist/
-build/
+#dist/
+#build/
 *.tgz
 *.tar.gz
 
@@ -54,4 +54,4 @@ jspm_packages/
 .yarn-integrity
 
 # dotenv environment variables file
-.env
+#.env
