@@ -481,8 +481,8 @@ app.listen(PORT, async () => {
   }
   
   // Testiraj konekciju pri pokretanju
-  const dbConnected = await testDatabaseConnection();
-  if (!dbConnected) {
-    console.log('❌ WARNING: Cannot connect to database!');
-  }
+//   const dbConnected = await testDatabaseConnection();
+//   if (!dbConnected) {
+//     console.log('❌ WARNING: Cannot connect to database!');
+//   }
 });
