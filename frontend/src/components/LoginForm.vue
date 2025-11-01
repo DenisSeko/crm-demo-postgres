@@ -44,6 +44,8 @@
 <script setup>
 import { ref, reactive } from "vue"
 import { authAPI } from "@/services/api" // ili "../services/api"
+import { ref, reactive } from "vue"
+import axios from "axios"
 
 const emit = defineEmits(["login-success", "go-home"])
 
@@ -88,6 +90,57 @@ const handleLogin = async () => {
     }
     
     alert("Pogrešni podaci za prijavu: " + errorMessage)
+  } finally {
+    isLoggingIn.value = false
+  }
+}
+const emit = defineEmits(["login-success", "go-home"])
+
+const isLoggingIn = ref(false)
+const debugInfo = ref("")
+
+const loginData = reactive({
+  email: "demo@demo.com",
+  password: "demo123"
+})
+
+const handleLogin = async () => {
+  isLoggingIn.value = true
+  debugInfo.value = ""
+  
+  try {
+    console.log('🔄 Direct axios login...')
+    
+    const response = await axios.post(
+      "https://crm-staging-app.up.railway.app/api/login",
+      {
+        email: loginData.email,
+        password: loginData.password
+      },
+      {
+        headers: {
+          "Content-Type": "application/json"
+        }
+      }
+    )
+    
+    console.log('✅ Login successful:', response.data)
+    debugInfo.value = { success: true, data: response.data }
+    
+    // Spremi token i user podatke
+    localStorage.setItem('token', response.data.token)
+    localStorage.setItem('user', JSON.stringify(response.data.user))
+    
+    emit("login-success", response.data)
+    
+  } catch (error) {
+    console.error('❌ Login failed:', error)
+    debugInfo.value = { 
+      error: true, 
+      message: error.message,
+      response: error.response?.data 
+    }
+    alert("Greška pri prijavi: " + (error.response?.data?.error || error.message))
   } finally {
     isLoggingIn.value = false
   }
