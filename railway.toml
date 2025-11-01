@@ -1,11 +1,8 @@
 [build]
 builder = "nixpacks"
 
-[build.scripts]
-build = "chmod +x database-init.sh"
-
 [deploy]
-startCommand = "./database-init.sh && npm start"
+startCommand = "node start.js"
 restartPolicyType = "ON_FAILURE" 
 healthCheckPath = "/api/health"
 healthCheckTimeout = 10

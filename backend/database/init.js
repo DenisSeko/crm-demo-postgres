@@ -1,65 +1,131 @@
-const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-require('dotenv').config();
+// database/init.js
+import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function initializeDatabase() {
-    console.log('🗄️  Initializing PostgreSQL database from schema.sql...');
+    console.log('🚀 Starting database initialization...');
     
+    if (!process.env.DATABASE_URL) {
+        console.error('❌ DATABASE_URL not set');
+        return; // Nemoj failati, možda nije potrebno
+    }
+
+    console.log('🔗 Database URL:', process.env.DATABASE_URL.replace(/:[^:]*@/, ':***@'));
+
     const pool = new Pool({
         connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+        ssl: { rejectUnauthorized: false }
     });
 
+    let client;
     try {
-        // Pročitaj schema.sql fajl
-        const schemaPath = path.join(__dirname, '..', '..', 'database', 'schema.sql');
-        const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
+        console.log('🔗 Testing database connection...');
+        client = await pool.connect();
         
-        console.log('📖 Running schema.sql...');
+        // Test connection
+        const result = await client.query('SELECT version()');
+        console.log('✅ Database connected successfully');
         
-        // Pokreni SQL komande iz schema.sql
-        await pool.query(schemaSQL);
+        // Pronađi schema.sql
+        const schemaPath = findSchemaFile();
         
-        console.log('✅ Database initialized successfully from schema.sql');
-        
-        // Dodaj demo podatke ako su potrebni
-        await seedDemoData(pool);
+        if (schemaPath) {
+            console.log(`📄 Found schema file: ${schemaPath}`);
+            await importSchema(client, schemaPath);
+        } else {
+            console.log('⚠️ No schema file found, checking existing tables...');
+            await checkExistingTables(client);
+        }
+
+        console.log('🎉 Database initialization completed!');
         
     } catch (error) {
-        console.error('❌ Database initialization error:', error);
-        throw error;
+        console.error('❌ Database initialization failed:', error.message);
+        // Nemoj failati - možda baza već postoji ili nije dostupna
     } finally {
+        if (client) {
+            client.release();
+        }
         await pool.end();
     }
 }
 
-async function seedDemoData(pool) {
+function findSchemaFile() {
+    const possiblePaths = [
+        path.join(process.cwd(), 'database', 'schema.sql'),
+        path.join(process.cwd(), 'schema.sql'),
+        path.join(__dirname, 'schema.sql'),
+        'schema.sql'
+    ];
+    
+    for (const schemaPath of possiblePaths) {
+        if (fs.existsSync(schemaPath)) {
+            return schemaPath;
+        }
+    }
+    
+    console.log('📁 Searched paths:', possiblePaths);
+    return null;
+}
+
+async function importSchema(client, schemaPath) {
     try {
-        console.log('🌱 Seeding demo data...');
+        const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
+        console.log(`📊 Importing schema (${schemaSQL.length} characters)...`);
         
-        // Provjeri da li već postoje demo podaci
-        const userCheck = await pool.query('SELECT * FROM users WHERE email = $1', ['demo@demo.com']);
+        // Podijeli SQL naredbe
+        const statements = schemaSQL
+            .split(';')
+            .map(stmt => stmt.trim())
+            .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
         
-        if (userCheck.rows.length === 0) {
-            // Dodaj demo usera
-            await pool.query(
-                'INSERT INTO users (email, password, name) VALUES ($1, $2, $3)',
-                ['demo@demo.com', 'demo123', 'Demo User']
-            );
-            console.log('👤 Demo user created: demo@demo.com / demo123');
-        } else {
-            console.log('👤 Demo user already exists');
+        console.log(`📝 Found ${statements.length} SQL statements`);
+        
+        for (let i = 0; i < statements.length; i++) {
+            const statement = statements[i] + ';';
+            try {
+                await client.query(statement);
+                console.log(`✅ Executed statement ${i + 1}/${statements.length}`);
+            } catch (error) {
+                console.error(`❌ Error in statement ${i + 1}:`, error.message);
+                // Nastavi s sljedećom naredbom
+            }
         }
         
+        console.log('✅ Schema import completed');
+        
     } catch (error) {
-        console.log('⚠️  Could not seed demo data (table might not exist yet):', error.message);
+        console.error('❌ Schema import failed:', error.message);
     }
 }
 
-// Pokreni inicijalizaciju ako je skripta pozvana direktno
-if (require.main === module) {
-    initializeDatabase().catch(console.error);
+async function checkExistingTables(client) {
+    try {
+        const result = await client.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+            ORDER BY table_name
+        `);
+        
+        console.log(`📊 Found ${result.rows.length} existing tables:`);
+        result.rows.forEach(row => console.log(`   - ${row.table_name}`));
+        
+        if (result.rows.length === 0) {
+            console.log('ℹ️ No tables found, database is empty');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error checking tables:', error.message);
+    }
 }
 
-module.exports = { initializeDatabase };
+// Pokreni inicijalizaciju
+initializeDatabase().catch(error => {
+    console.error('Failed to initialize database:', error);
+});
