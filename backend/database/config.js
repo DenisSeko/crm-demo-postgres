@@ -1,12 +1,11 @@
 import pkg from 'pg';
 const { Pool } = pkg;
 
+// Koristi DATABASE_URL od Railwaya, fallback na lokalne postavke
 export const pool = new Pool({
-  user: 'crm_user',
-  host: 'localhost',
-  database: 'crm_demo',
-  password: 'crm_password',
-  port: 5433,
+  connectionString: process.env.DATABASE_URL || 
+    'postgresql://crm_user:crm_password@localhost:5433/crm_demo',
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 // Graceful shutdown

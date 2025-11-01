@@ -1,5 +1,5 @@
 // database/init.js
-import { Pool } from 'pg';
+import { pool } from './config.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,21 +7,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function initializeDatabase() {
+export async function initializeDatabase() {
     console.log('🚀 Starting database initialization...');
     
-    if (!process.env.DATABASE_URL) {
-        console.error('❌ DATABASE_URL not set');
-        return; // Nemoj failati, možda nije potrebno
-    }
-
-    console.log('🔗 Database URL:', process.env.DATABASE_URL.replace(/:[^:]*@/, ':***@'));
-
-    const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: { rejectUnauthorized: false }
-    });
-
     let client;
     try {
         console.log('🔗 Testing database connection...');
@@ -29,7 +17,7 @@ async function initializeDatabase() {
         
         // Test connection
         const result = await client.query('SELECT version()');
-        console.log('✅ Database connected successfully');
+        console.log('✅ Database connected:', result.rows[0].version);
         
         // Pronađi schema.sql
         const schemaPath = findSchemaFile();
@@ -43,15 +31,15 @@ async function initializeDatabase() {
         }
 
         console.log('🎉 Database initialization completed!');
+        return true;
         
     } catch (error) {
         console.error('❌ Database initialization failed:', error.message);
-        // Nemoj failati - možda baza već postoji ili nije dostupna
+        return false;
     } finally {
         if (client) {
             client.release();
         }
-        await pool.end();
     }
 }
 
@@ -69,38 +57,21 @@ function findSchemaFile() {
         }
     }
     
-    console.log('📁 Searched paths:', possiblePaths);
+    console.log('📁 Searched in:', possiblePaths);
     return null;
 }
 
 async function importSchema(client, schemaPath) {
     try {
         const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
-        console.log(`📊 Importing schema (${schemaSQL.length} characters)...`);
+        console.log(`📊 Importing schema (${schemaSQL.length} chars)...`);
         
-        // Podijeli SQL naredbe
-        const statements = schemaSQL
-            .split(';')
-            .map(stmt => stmt.trim())
-            .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
-        
-        console.log(`📝 Found ${statements.length} SQL statements`);
-        
-        for (let i = 0; i < statements.length; i++) {
-            const statement = statements[i] + ';';
-            try {
-                await client.query(statement);
-                console.log(`✅ Executed statement ${i + 1}/${statements.length}`);
-            } catch (error) {
-                console.error(`❌ Error in statement ${i + 1}:`, error.message);
-                // Nastavi s sljedećom naredbom
-            }
-        }
-        
-        console.log('✅ Schema import completed');
+        await client.query(schemaSQL);
+        console.log('✅ Schema imported successfully');
         
     } catch (error) {
         console.error('❌ Schema import failed:', error.message);
+        // Možda tabele već postoje, to je OK
     }
 }
 
@@ -110,22 +81,17 @@ async function checkExistingTables(client) {
             SELECT table_name 
             FROM information_schema.tables 
             WHERE table_schema = 'public'
-            ORDER BY table_name
         `);
         
         console.log(`📊 Found ${result.rows.length} existing tables:`);
         result.rows.forEach(row => console.log(`   - ${row.table_name}`));
-        
-        if (result.rows.length === 0) {
-            console.log('ℹ️ No tables found, database is empty');
-        }
         
     } catch (error) {
         console.error('❌ Error checking tables:', error.message);
     }
 }
 
-// Pokreni inicijalizaciju
-initializeDatabase().catch(error => {
-    console.error('Failed to initialize database:', error);
-});
+// Samo pokreni ako je direktno pozvan
+if (import.meta.url === `file://${process.argv[1]}`) {
+    initializeDatabase();
+}

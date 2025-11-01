@@ -1,14 +1,24 @@
+// server.js
 import express from 'express';
 import cors from 'cors';
 import { pool } from './database/config.js';
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
+// Ažurirane CORS postavke za production i development
 app.use(cors({
-  origin: 'http://localhost:5173',
-  credentials: true
+  origin: [
+    'https://crm-stgaing-app.vercel.app',
+    'https://crm-staging-app.vercel.app', 
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 
 // Test konekcije na bazu pri pokretanju
@@ -28,7 +38,8 @@ async function testDatabaseConnection() {
 app.get('/', (req, res) => {
   res.json({ 
     message: 'CRM Backend API is running!',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
@@ -39,7 +50,8 @@ app.get('/api/health', async (req, res) => {
     res.json({ 
       status: 'OK', 
       database: 'connected',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development'
     });
   } catch (error) {
     console.error('Health check failed:', error.message);
@@ -92,7 +104,8 @@ app.get('/api/debug/database', async (req, res) => {
       counts: tableCounts,
       sampleData: tableData,
       connection: 'successful',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development'
     };
 
     console.log('📊 Debug info:', debugInfo);
@@ -372,16 +385,19 @@ app.get('/api/clients/notes-count', async (req, res) => {
 
 // Start server
 app.listen(PORT, async () => {
-  console.log(`🚀 Backend server running on http://localhost:${PORT}`);
-  console.log(`📊 PostgreSQL database: crm_demo`);
+  console.log(`🚀 Backend server running on port: ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📊 PostgreSQL database: ${process.env.DATABASE_URL ? 'Railway' : 'Local'}`);
   console.log(`🔐 Demo login: demo@demo.com / demo123`);
   console.log(`🐛 Debug endpoint: http://localhost:${PORT}/api/debug/database`);
+  
+  if (process.env.NODE_ENV === 'production') {
+    console.log(`🔗 Frontend URL: https://crm-stgaing-app.vercel.app`);
+  }
   
   // Testiraj konekciju pri pokretanju
   const dbConnected = await testDatabaseConnection();
   if (!dbConnected) {
     console.log('❌ WARNING: Cannot connect to database!');
-    console.log('💡 Check if PostgreSQL container is running: docker-compose ps');
-    console.log('💡 Check database port and credentials');
   }
 });
