@@ -11,7 +11,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "https://crm-staging-backend.up.railway.app",
+        target: "https://crm-staging-app.up.railway.app",
         changeOrigin: true,
         secure: false
       }

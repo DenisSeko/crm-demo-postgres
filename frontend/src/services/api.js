@@ -1,6 +1,6 @@
 import axios from "axios"
 
-const API_URL = import.meta.env.VITE_API_URL || "https://crm-staging-backend.up.railway.app"
+const API_URL = import.meta.env.VITE_API_URL || "https://crm-staging-app.up.railway.app"
 
 const api = axios.create({
   baseURL: API_URL,
@@ -12,7 +12,7 @@ const api = axios.create({
 // Auth API
 export const authAPI = {
   login: async (email, password) => {
-    const response = await api.post("/api/auth/login", { email, password })
+    const response = await api.post("/api/login", { email, password }) // ✅ Ispravan endpoint
     return response.data
   },
 }
@@ -30,17 +30,17 @@ export const clientsAPI = {
   },
   
   getNotes: async (clientId) => {
-    const response = await api.get(\`/api/clients/\${clientId}/notes\`)
+    const response = await api.get(`/api/clients/${clientId}/notes`) // ✅ Ispravno
     return response.data
   },
   
   addNote: async (clientId, content) => {
-    const response = await api.post(\`/api/clients/\${clientId}/notes\`, { content })
+    const response = await api.post(`/api/clients/${clientId}/notes`, { content }) // ✅ Ispravno
     return response.data
   },
 
   deleteClient: async (clientId) => {
-    const response = await api.delete(\`/api/clients/\${clientId}\`)
+    const response = await api.delete(`/api/clients/${clientId}`) // ✅ Ispravno
     return response.data
   },
 
@@ -58,7 +58,7 @@ export const clientsAPI = {
 // Notes API
 export const notesAPI = {
   deleteNote: async (noteId) => {
-    const response = await api.delete(\`/api/notes/\${noteId}\`)
+    const response = await api.delete(`/api/notes/${noteId}`) // ✅ Ispravno
     return response.data
   }
 }
