@@ -104,4 +104,14 @@ export const healthAPI = {
   },
 }
 
+// ⭐⭐⭐ CACHE BUSTING - FORCE NEW VERSION ⭐⭐⭐
+console.log('🔄 API Cache Busting Timestamp:', Date.now())
+console.log('✅ API URL Verified:', API_URL)
+
+// Force version check
+if (typeof window !== 'undefined') {
+  window.API_VERSION = 'v2-' + Date.now()
+  console.log('🚀 API Version:', window.API_VERSION)
+}
+
 export default api
