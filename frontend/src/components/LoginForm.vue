@@ -29,20 +29,26 @@
     </div>
 
     <div class="mt-4 text-center">
-      <a href="#" @click.prevent="$emit(\"go-home\")" class="text-blue-600 hover:text-blue-800 text-sm">
+      <a href="#" @click.prevent="$emit('go-home')" class="text-blue-600 hover:text-blue-800 text-sm">
         ← Povratak na početnu
       </a>
+    </div>
+
+    <!-- Debug info -->
+    <div v-if="debugInfo" class="mt-4 p-3 bg-gray-100 rounded-md text-xs">
+      <pre>{{ debugInfo }}</pre>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive } from "vue"
-import { authAPI } from "@/services/api"
+import { authAPI } from "@/services/api" // ili "../services/api"
 
-const emit = defineEmits(["login", "go-home"])
+const emit = defineEmits(["login-success", "go-home"])
 
 const isLoggingIn = ref(false)
+const debugInfo = ref("")
 
 const loginData = reactive({
   email: "demo@demo.com",
@@ -51,13 +57,37 @@ const loginData = reactive({
 
 const handleLogin = async () => {
   isLoggingIn.value = true
+  debugInfo.value = ""
+  
   try {
-    await new Promise(resolve => setTimeout(resolve, 500))
+    console.log('🔄 Starting login process...')
+    
+    // Uklonio artificial delay - testiraj bez njega
     const response = await authAPI.login(loginData.email, loginData.password)
-    emit("login", response)
+    
+    console.log('✅ Login successful:', response)
+    debugInfo.value = { success: true, data: response }
+    
+    // Emit success event
+    emit("login-success", response)
+    
   } catch (error) {
-    console.error("Login failed:", error.response?.data || error.message)
-    alert("Pogrešni podaci za prijavu: " + (error.response?.data?.message || error.message))
+    console.error('❌ Login failed:', error)
+    
+    // Detaljan error handling
+    const errorMessage = error.response?.data?.error || 
+                        error.response?.data?.message || 
+                        error.message || 
+                        "Došlo je do greške pri prijavi"
+    
+    debugInfo.value = { 
+      error: true, 
+      message: errorMessage,
+      response: error.response?.data,
+      status: error.response?.status
+    }
+    
+    alert("Pogrešni podaci za prijavu: " + errorMessage)
   } finally {
     isLoggingIn.value = false
   }

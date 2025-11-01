@@ -2,6 +2,8 @@ import axios from "axios"
 
 const API_URL = import.meta.env.VITE_API_URL || "https://crm-staging-app.up.railway.app"
 
+console.log('🔗 API URL:', API_URL) // ← Ovo će pokazati koji URL se koristi
+
 const api = axios.create({
   baseURL: API_URL,
   headers: {
