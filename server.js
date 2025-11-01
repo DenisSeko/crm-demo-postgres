@@ -119,7 +119,7 @@ app.get('/', (req, res) => {
     res.json({ message: 'CRM API is running!' });
 });
 
-/ Osnovni endpoint
+// Osnovni endpoint
 app.get('/', (req, res) => {
   res.json({ 
     message: 'CRM Backend API is running!',
