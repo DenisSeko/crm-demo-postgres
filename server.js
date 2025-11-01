@@ -475,6 +475,5 @@ app.listen(PORT, async () => {
   console.log(`🐛 Debug endpoint: http://localhost:${PORT}/api/debug/database`);
   
   if (process.env.NODE_ENV === 'production') {
-    console.log(`🔗 Frontend URL: https://crm-stgaing-app.vercel.app`);
   }
 });
