@@ -1,8 +1,9 @@
 import axios from "axios"
 
+// ⭐⭐⭐ ISPRAVITE OVO - koristite Railway URL ⭐⭐⭐
 const API_URL = "https://crm-staging-app.up.railway.app"
 
-console.log('🔗 API URL:', API_URL) // ← Ovo će pokazati koji URL se koristi
+console.log('🚀 API Service initialized with URL:', API_URL)
 
 const api = axios.create({
   baseURL: API_URL,
@@ -11,10 +12,40 @@ const api = axios.create({
   },
 })
 
+// Add detailed request logging
+api.interceptors.request.use((config) => {
+  console.log('📡 Making request to:', config.baseURL + config.url)
+  console.log('🔧 Request config:', {
+    method: config.method,
+    url: config.url,
+    baseURL: config.baseURL,
+    data: config.data
+  })
+  return config
+})
+
+// Add response logging
+api.interceptors.response.use(
+  (response) => {
+    console.log('✅ Response received from:', response.config.url)
+    console.log('📦 Response data:', response.data)
+    return response
+  },
+  (error) => {
+    console.error('❌ API Error:', {
+      url: error.config?.baseURL + error.config?.url,
+      status: error.response?.status,
+      message: error.response?.data?.message || error.message
+    })
+    return Promise.reject(error)
+  }
+)
+
 // Auth API
 export const authAPI = {
   login: async (email, password) => {
-    const response = await api.post("/api/login", { email, password }) // ✅ Ispravan endpoint
+    console.log('🔐 authAPI.login called with:', { email })
+    const response = await api.post("/api/login", { email, password })
     return response.data
   },
 }
@@ -32,17 +63,17 @@ export const clientsAPI = {
   },
   
   getNotes: async (clientId) => {
-    const response = await api.get(`/api/clients/${clientId}/notes`) // ✅ Ispravno
+    const response = await api.get(`/api/clients/${clientId}/notes`)
     return response.data
   },
   
   addNote: async (clientId, content) => {
-    const response = await api.post(`/api/clients/${clientId}/notes`, { content }) // ✅ Ispravno
+    const response = await api.post(`/api/clients/${clientId}/notes`, { content })
     return response.data
   },
 
   deleteClient: async (clientId) => {
-    const response = await api.delete(`/api/clients/${clientId}`) // ✅ Ispravno
+    const response = await api.delete(`/api/clients/${clientId}`)
     return response.data
   },
 
@@ -60,7 +91,7 @@ export const clientsAPI = {
 // Notes API
 export const notesAPI = {
   deleteNote: async (noteId) => {
-    const response = await api.delete(`/api/notes/${noteId}`) // ✅ Ispravno
+    const response = await api.delete(`/api/notes/${noteId}`)
     return response.data
   }
 }
