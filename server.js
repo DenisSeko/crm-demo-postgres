@@ -21,9 +21,14 @@ pool.on('error', (err) => {
 });
 
 // ⭐⭐⭐ CORS MIDDLEWARE ⭐⭐⭐
+
+
+// CORS Configuration - dodajte ovo PRIJE svih rutaa
 app.use(cors({
   origin: [
-    'https://crm-stagaing-app.vercel.app',
+    'https://crm-stgaing-app.vercel.app',
+    'https://crm-basic-9r093y1se-denis-projects-e03958c1.vercel.app',
+    'https://crm-staging-app.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000'
   ],
@@ -32,17 +37,47 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
-// Explicit preflight handling
+// Explicitno handle-aj OPTIONS requests
 app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', req.headers.origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.status(204).send();
 });
 
-app.use(express.json());
-app.options('*', cors());
+// Dodajte CORS logging middleware
+app.use((req, res, next) => {
+  console.log('🌐 CORS Info:', {
+    method: req.method,
+    url: req.url,
+    origin: req.headers.origin,
+    'user-agent': req.headers['user-agent']?.substring(0, 50)
+  });
+  next();
+});
+// app.use(cors({
+//   origin: [
+//     'https://crm-stagaing-app.vercel.app',
+//     'http://localhost:5173',
+//     'http://localhost:3000'
+//   ],
+//   credentials: true,
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+// }));
+
+// // Explicit preflight handling
+// app.options('*', (req, res) => {
+//   res.header('Access-Control-Allow-Origin', req.headers.origin);
+//   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+//   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+//   res.header('Access-Control-Allow-Credentials', 'true');
+//   res.status(204).send();
+// });
+
+// app.use(express.json());
+// app.options('*', cors());
 
 // ⭐⭐⭐ POBOLJŠANI DATABASE INIT ⭐⭐⭐
 async function initializeDatabase() {
