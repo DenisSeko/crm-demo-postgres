@@ -87,7 +87,7 @@
   </div>
 </template>
 
-<script setup>
+<!--script setup>
 import { ref, reactive, computed, onMounted } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { authAPI, healthAPI } from "services/api"
@@ -317,4 +317,65 @@ onMounted(() => {
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
 }
-</style>
+</style-->
+<!--script setup>
+import { ref, reactive } from "vue"
+import axios from "axios"
+
+const emit = defineEmits(["login-success", "go-home"])
+
+const isLoggingIn = ref(false)
+const errorMessage = ref("")
+
+const loginData = reactive({
+  email: "demo@demo.com",
+  password: "demo123"
+})
+
+const handleLogin = async () => {
+  isLoggingIn.value = true
+  errorMessage.value = ""
+  
+  try {
+    console.log('🔄 Sending DIRECT request to Railway...')
+    
+    // ⭐⭐⭐ DIREKTAN POZIV - zaobiđi API servis ⭐⭐⭐
+    const response = await axios.post(
+      "https://crm-staging-app.up.railway.app/api/login",
+      {
+        email: loginData.email,
+        password: loginData.password
+      }
+    )
+    
+    console.log('✅ Direct login successful:', response.data)
+    
+    localStorage.setItem('token', response.data.token)
+    localStorage.setItem('user', JSON.stringify(response.data.user))
+    emit("login-success", response.data)
+    
+  } catch (error) {
+    console.error('❌ Direct login failed:', error)
+    errorMessage.value = error.response?.data?.error || error.message
+  } finally {
+    isLoggingIn.value = false
+  }
+}
+</script-->
+<script setup>
+import { ref, reactive, onMounted } from "vue"
+import { authAPI, healthAPI, getApiBaseUrl } from "@/services/api"
+
+// Test API konfiguracije
+onMounted(() => {
+  console.log('🧪 API Configuration Test:')
+  console.log('   Base URL:', getApiBaseUrl())
+  console.log('   Environment:', import.meta.env.MODE)
+  console.log('   Production:', import.meta.env.PROD)
+  
+  // Test health check
+  healthAPI.check()
+    .then(health => console.log('✅ Health check:', health))
+    .catch(err => console.error('❌ Health check failed:', err))
+})
+</script>
