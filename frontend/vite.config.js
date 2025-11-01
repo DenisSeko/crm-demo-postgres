@@ -1,3 +1,4 @@
+// vite.config.js - PRIVREMENO promijeni
 import { defineConfig } from "vite"
 import vue from "@vitejs/plugin-vue"
 
@@ -8,13 +9,6 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true
   },
-  server: {
-    proxy: {
-      "/api": {
-        target: "https://crm-staging-app.up.railway.app",
-        changeOrigin: true,
-        secure: false
-      }
-    }
-  }
+  // UKLONI server.proxy sekciju za sada
+  // Netlify ne koristi Vite dev server u produkciji
 })
