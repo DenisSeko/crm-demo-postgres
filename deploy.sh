@@ -116,7 +116,16 @@ setup_project() {
         print_success "Upsun remote već postoji"
         PROJECT_URL=$(git remote get-url upsun)
         print_info "Remote URL: $PROJECT_URL"
-        return
+        
+        echo ""
+        read -p "Želiš li koristiti postojeći remote? (y/n): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            return
+        else
+            print_warning "Brišem postojeći remote..."
+            git remote remove upsun
+        fi
     fi
     
     echo ""
@@ -124,16 +133,37 @@ setup_project() {
     echo "2) Kreiraj novi projekt"
     read -p "Odaberi opciju (1/2): " -n 1 -r
     echo
+    echo ""
     
     if [[ $REPLY == "1" ]]; then
         # Lista postojećih projekata
         print_info "Dohvaćam listu projekata..."
+        echo ""
         upsun project:list
         echo ""
-        read -p "Unesi Project ID: " project_id
+        echo -e "${YELLOW}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║${NC} VAŽNO: Kopiraj SAMO ID projekta!                          ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC} Primjer: envpwlcf4e7e2                                     ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC} NE: 'upsun get envpwlcf4e7e2'                              ${YELLOW}║${NC}"
+        echo -e "${YELLOW}╚════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        read -p "Project ID: " project_id
         
-        upsun project:set-remote "$project_id"
-        print_success "Projekt povezan!"
+        # Očisti input od mogućih komandi
+        project_id=$(echo "$project_id" | sed 's/upsun get //g' | sed 's/upsun //g' | sed 's/get //g' | xargs)
+        
+        print_info "Povezujem projekt: $project_id"
+        
+        if upsun project:set-remote "$project_id"; then
+            print_success "Projekt povezan!"
+        else
+            print_error "Greška pri povezivanju projekta!"
+            print_info "Provjeri je li ID ispravan: $project_id"
+            echo ""
+            print_info "Možeš pokušati ručno:"
+            echo "  upsun project:set-remote $project_id"
+            exit 1
+        fi
         
     elif [[ $REPLY == "2" ]]; then
         read -p "Naziv projekta: " project_name
