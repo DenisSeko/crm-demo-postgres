@@ -11,6 +11,14 @@ applications:
     web:
       commands:
         start: node server.js
+    relationships:
+      database:
+        service: postgresql
+        endpoint: postgresql
+
+services:
+  postgresql:
+    type: postgresql:15
 
 routes:
   "https://{default}/":
