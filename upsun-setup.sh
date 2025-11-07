@@ -1,13 +1,5 @@
-# Prebaci se na staging branch
-git checkout staging
-
-# Kreiraj .upsun direktorij i config.yaml
-mkdir -p .upsun
+# Kreiraj ispravnu konfiguraciju
 cat > .upsun/config.yaml << 'EOF'
-name: crm-app
-type: application
-runtime: nodejs
-
 applications:
   frontend:
     type: nodejs:20
@@ -22,6 +14,11 @@ applications:
     web:
       commands:
         start: npm run preview --port 3000 --host 0.0.0.0
+      locations:
+        "/":
+          root: "dist"
+          expires: 1h
+          passthru: true
 
   backend:
     type: nodejs:20
@@ -47,11 +44,11 @@ relationships:
     endpoint: postgresql
 
 routes:
-  "https://staging-${UPSUN_PROJECT}.upsunapp.com":
+  "https://staging-{default}/":
     type: upstream
     upstream: "frontend:http"
     
-  "https://api-staging-${UPSUN_PROJECT}.upsunapp.com":
+  "https://api-staging-{default}/":
     type: upstream
     upstream: "backend:http"
 EOF
