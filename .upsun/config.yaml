@@ -11,11 +11,8 @@ applications:
     web:
       commands:
         start: node server.js
-    relationships:
-      postgresql:
-        service: postgresql
-        endpoint: postgresql
 
-services:
-  postgresql:
-    type: postgresql:15
+routes:
+  "https://{default}/":
+    type: upstream
+    upstream: "backend:http"
