@@ -1,0 +1,50 @@
+name: crm-app
+type: application
+runtime: nodejs
+
+applications:
+  frontend:
+    type: nodejs:20
+    source:
+      root: "frontend"
+    build:
+      flavor: none
+    hooks:
+      build: |
+        npm ci
+        npm run build
+    web:
+      commands:
+        start: npm run preview --port 3000 --host 0.0.0.0
+
+  backend:
+    type: nodejs:20
+    source:
+      root: "backend"
+    build:
+      flavor: none
+    hooks:
+      build: |
+        npm ci
+    web:
+      commands:
+        start: node server.js
+
+services:
+  database:
+    type: postgresql:15
+    disk: 1024
+
+relationships:
+  database:
+    service: database
+    endpoint: postgresql
+
+routes:
+  "https://staging-${UPSUN_PROJECT}.upsunapp.com":
+    type: upstream
+    upstream: "frontend:http"
+    
+  "https://api-staging-${UPSUN_PROJECT}.upsunapp.com":
+    type: upstream
+    upstream: "backend:http"
