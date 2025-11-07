@@ -113,16 +113,29 @@ setup_project() {
     
     # Provjeri postoji li remote
     if git remote get-url upsun &> /dev/null; then
-        print_success "Upsun remote već postoji"
         PROJECT_URL=$(git remote get-url upsun)
-        print_info "Remote URL: $PROJECT_URL"
         
-        echo ""
-        read -p "Želiš li koristiti postojeći remote? (y/n): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            return
+        # Provjeri je li to GitHub ili Upsun remote
+        if [[ "$PROJECT_URL" == *"github.com"* ]] || [[ "$PROJECT_URL" == *"gitlab.com"* ]]; then
+            print_error "Upsun remote pokazuje na GitHub/GitLab umjesto na Upsun!"
+            print_info "Trenutni remote: $PROJECT_URL"
+            print_warning "Moram resetirati remote..."
+            git remote remove upsun
+        elif [[ "$PROJECT_URL" == *"platform.sh"* ]] || [[ "$PROJECT_URL" == *"upsun"* ]]; then
+            print_success "Upsun remote već postoji i ispravan je"
+            print_info "Remote URL: $PROJECT_URL"
+            
+            echo ""
+            read -p "Želiš li koristiti postojeći remote? (y/n): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                return
+            else
+                print_warning "Brišem postojeći remote..."
+                git remote remove upsun
+            fi
         else
+            print_warning "Nepoznat remote URL format: $PROJECT_URL"
             print_warning "Brišem postojeći remote..."
             git remote remove upsun
         fi
@@ -304,6 +317,26 @@ run_local_tests() {
 deploy_to_upsun() {
     print_header "Deployment na Upsun..."
     
+    # Provjeri remote prije pusha
+    if ! git remote get-url upsun &> /dev/null; then
+        print_error "Upsun remote nije postavljen!"
+        print_info "Pokreni ponovo setup projekta..."
+        setup_project
+    fi
+    
+    # Potvrdi da je remote ispravan
+    REMOTE_URL=$(git remote get-url upsun)
+    if [[ "$REMOTE_URL" != *"platform.sh"* ]] && [[ "$REMOTE_URL" != *"upsun"* ]]; then
+        print_error "Remote URL ne pokazuje na Upsun platformu!"
+        print_info "Trenutni URL: $REMOTE_URL"
+        print_warning "Resetiram remote..."
+        git remote remove upsun
+        setup_project
+        REMOTE_URL=$(git remote get-url upsun)
+    fi
+    
+    print_success "Remote URL: $REMOTE_URL"
+    
     # Odabir brancha
     CURRENT_BRANCH=$(git branch --show-current)
     print_info "Trenutni branch: $CURRENT_BRANCH"
@@ -318,11 +351,33 @@ deploy_to_upsun() {
     
     # Push na Upsun
     print_info "Pushing na Upsun remote..."
-    if git push upsun "$deploy_branch" --force-with-lease; then
+    
+    # Pokušaj normalni push
+    if git push upsun "$deploy_branch" 2>&1 | tee /tmp/push_output.log; then
         print_success "Kod uspješno pushed!"
     else
-        print_error "Git push neuspješan!"
-        exit 1
+        # Ako normalni push ne uspije, pokušaj force
+        print_warning "Push neuspješan. Pokušavam sa --force-with-lease..."
+        
+        if git push upsun "$deploy_branch" --force-with-lease; then
+            print_success "Kod uspješno pushed (force)!"
+        else
+            print_error "Git push neuspješan!"
+            echo ""
+            print_info "Mogući problemi:"
+            echo "  1. Branch ne postoji na remote-u - pokušaj: git push upsun $deploy_branch:main"
+            echo "  2. Potreban force push - pokušaj: git push upsun $deploy_branch --force"
+            echo "  3. Remote nije ispravan - provjeri: git remote get-url upsun"
+            echo ""
+            read -p "Želiš li pokušati force push? (y/n): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                git push upsun "$deploy_branch" --force
+                print_success "Force push uspješan!"
+            else
+                exit 1
+            fi
+        fi
     fi
     
     # Prati deployment
