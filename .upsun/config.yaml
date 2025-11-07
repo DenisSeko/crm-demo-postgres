@@ -1,23 +1,4 @@
 applications:
-  frontend:
-    type: nodejs:20
-    source:
-      root: "frontend"
-    build:
-      flavor: none
-    hooks:
-      build: |
-        npm ci
-        npm run build
-    web:
-      commands:
-        start: npm run preview --port 3000 --host 0.0.0.0
-      locations:
-        "/":
-          root: "dist"
-          expires: 1h
-          passthru: true
-
   backend:
     type: nodejs:20
     source:
@@ -30,8 +11,6 @@ applications:
     web:
       commands:
         start: node server.js
-      upstream:
-        socket_family: tcp
     relationships:
       postgresql:
         service: postgresql
@@ -43,9 +22,5 @@ services:
 
 routes:
   "https://{default}/":
-    type: upstream
-    upstream: "frontend:http"
-    
-  "https://{default}/api/":
     type: upstream
     upstream: "backend:http"
