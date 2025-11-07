@@ -30,6 +30,8 @@ applications:
     web:
       commands:
         start: node server.js
+      upstream:
+        socket_family: tcp
     relationships:
       postgresql:
         service: postgresql
@@ -40,10 +42,9 @@ services:
     type: postgresql:15
 
 routes:
-  "https://{default}/":
+  "https://www.{default}/":
     type: upstream
     upstream: "frontend:http"
     
-  "https://{default}/api/":
+  "https://api.{default}/":
     type: upstream
-    upstream: "backend:http"
