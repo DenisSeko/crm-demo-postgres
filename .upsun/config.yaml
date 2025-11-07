@@ -21,6 +21,6 @@ services:
     type: postgresql:15
 
 routes:
-  "https://{default}/":
+  "https://staging-ndb75vqywwrn6.eu-5.platformsh.site":
     type: upstream
     upstream: "backend:http"
