@@ -42,9 +42,10 @@ services:
     type: postgresql:15
 
 routes:
-  "https://www.{default}/":
+  "https://{default}/":
     type: upstream
     upstream: "frontend:http"
     
-  "https://api.{default}/":
+  "https://{default}/api/":
     type: upstream
+    upstream: "backend:http"
