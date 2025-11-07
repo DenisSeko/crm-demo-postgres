@@ -1,12 +1,22 @@
 import express from 'express';
 import cors from 'cors';
-import { pool } from './database/config.js';
+import pkg from 'pg';
+
+const { Pool } = pkg;
 
 const app = express();
-const PORT = 3001;
+
+// Upsun koristi PORT environment varijablu
+const PORT = process.env.PORT || 8888;
+
+// Database configuration za Upsun
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true
 }));
 app.use(express.json());
@@ -28,6 +38,8 @@ async function testDatabaseConnection() {
 app.get('/', (req, res) => {
   res.json({ 
     message: 'CRM Backend API is running!',
+    environment: process.env.NODE_ENV || 'development',
+    port: PORT,
     timestamp: new Date().toISOString()
   });
 });
@@ -38,6 +50,8 @@ app.get('/api/health', async (req, res) => {
     await pool.query('SELECT 1');
     res.json({ 
       status: 'OK', 
+      environment: process.env.NODE_ENV || 'development',
+      port: PORT,
       database: 'connected',
       timestamp: new Date().toISOString()
     });
@@ -45,6 +59,8 @@ app.get('/api/health', async (req, res) => {
     console.error('Health check failed:', error.message);
     res.status(500).json({ 
       status: 'ERROR', 
+      environment: process.env.NODE_ENV || 'development',
+      port: PORT,
       database: 'disconnected',
       error: error.message,
       timestamp: new Date().toISOString()
@@ -72,22 +88,29 @@ app.get('/api/debug/database', async (req, res) => {
     for (let table of tablesResult.rows) {
       const tableName = table.table_name;
       
-      // Broj redova
-      const countResult = await client.query(`SELECT COUNT(*) as count FROM ${tableName}`);
-      tableCounts[tableName] = parseInt(countResult.rows[0].count);
-      
-      // Prvih 5 redova (ako postoje)
-      if (tableCounts[tableName] > 0) {
-        const dataResult = await client.query(`SELECT * FROM ${tableName} LIMIT 3`);
-        tableData[tableName] = dataResult.rows;
-      } else {
-        tableData[tableName] = [];
+      try {
+        // Broj redova
+        const countResult = await client.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
+        tableCounts[tableName] = parseInt(countResult.rows[0].count);
+        
+        // Prvih 5 redova (ako postoje)
+        if (tableCounts[tableName] > 0) {
+          const dataResult = await client.query(`SELECT * FROM "${tableName}" LIMIT 3`);
+          tableData[tableName] = dataResult.rows;
+        } else {
+          tableData[tableName] = [];
+        }
+      } catch (tableError) {
+        console.error(`Error querying table ${tableName}:`, tableError.message);
+        tableCounts[tableName] = -1;
+        tableData[tableName] = { error: tableError.message };
       }
     }
 
     client.release();
 
     const debugInfo = {
+      environment: process.env.NODE_ENV || 'development',
       tables: tablesResult.rows.map(row => row.table_name),
       counts: tableCounts,
       sampleData: tableData,
@@ -101,6 +124,7 @@ app.get('/api/debug/database', async (req, res) => {
   } catch (error) {
     console.error('❌ Debug database error:', error);
     res.status(500).json({
+      environment: process.env.NODE_ENV || 'development',
       error: error.message,
       connection: 'failed',
       timestamp: new Date().toISOString()
@@ -108,7 +132,7 @@ app.get('/api/debug/database', async (req, res) => {
   }
 });
 
-// Stats endpoint - AŽURIRANA VERZIJA
+// Stats endpoint
 app.get('/api/clients/stats', async (req, res) => {
   try {
     console.log('📊 Getting stats...');
@@ -122,7 +146,8 @@ app.get('/api/clients/stats', async (req, res) => {
     const stats = {
       clients: parseInt(clientsResult.rows[0].count),
       totalNotes: parseInt(notesResult.rows[0].count),
-      lastNote: lastNoteResult.rows[0]?.content || 'Nema bilježki'
+      lastNote: lastNoteResult.rows[0]?.content || 'Nema bilježki',
+      environment: process.env.NODE_ENV || 'development'
     };
 
     console.log('📈 Stats calculated:', stats);
@@ -131,7 +156,8 @@ app.get('/api/clients/stats', async (req, res) => {
     console.error('❌ Get stats error:', error);
     res.status(500).json({ 
       error: 'Database error',
-      details: error.message 
+      details: error.message,
+      environment: process.env.NODE_ENV || 'development'
     });
   }
 });
@@ -167,7 +193,8 @@ app.post('/api/login', async (req, res) => {
           id: user.id, 
           email: user.email, 
           name: user.name 
-        } 
+        },
+        environment: process.env.NODE_ENV || 'development'
       });
     } else {
       console.log('❌ Password mismatch for:', email);
@@ -175,11 +202,14 @@ app.post('/api/login', async (req, res) => {
     }
   } catch (error) {
     console.error('💥 Login error:', error);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ 
+      error: 'Database error',
+      environment: process.env.NODE_ENV || 'development'
+    });
   }
 });
 
-// Clients endpoints s boljim error handlingom
+// Clients endpoints
 app.get('/api/clients', async (req, res) => {
   try {
     console.log('📋 Getting clients list...');
@@ -195,6 +225,7 @@ app.get('/api/clients', async (req, res) => {
     res.status(500).json({ 
       error: 'Database error',
       message: error.message,
+      environment: process.env.NODE_ENV || 'development',
       details: 'Check if database is running and tables exist'
     });
   }
@@ -211,7 +242,10 @@ app.post('/api/clients', async (req, res) => {
     const ownerId = userResult.rows[0]?.id;
 
     if (!ownerId) {
-      return res.status(400).json({ error: 'No user found' });
+      return res.status(400).json({ 
+        error: 'No user found',
+        environment: process.env.NODE_ENV || 'development'
+      });
     }
 
     const result = await pool.query(
@@ -225,7 +259,10 @@ app.post('/api/clients', async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Create client error:', error);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ 
+      error: 'Database error',
+      environment: process.env.NODE_ENV || 'development'
+    });
   }
 });
 
@@ -248,7 +285,10 @@ app.delete('/api/clients/:id', async (req, res) => {
     res.json({ message: 'Client deleted', client: result.rows[0] });
   } catch (error) {
     console.error('Delete client error:', error);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ 
+      error: 'Database error',
+      environment: process.env.NODE_ENV || 'development'
+    });
   }
 });
 
@@ -268,7 +308,10 @@ app.get('/api/clients/:id/notes', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Get notes error:', error);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ 
+      error: 'Database error',
+      environment: process.env.NODE_ENV || 'development'
+    });
   }
 });
 
@@ -304,7 +347,10 @@ app.post('/api/clients/:id/notes', async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('💥 Add note error:', error);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ 
+      error: 'Database error',
+      environment: process.env.NODE_ENV || 'development'
+    });
   }
 });
 
@@ -331,7 +377,10 @@ app.delete('/api/notes/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Delete note error:', error);
-    res.status(500).json({ error: 'Greška pri brisanju bilješke' });
+    res.status(500).json({ 
+      error: 'Greška pri brisanju bilješke',
+      environment: process.env.NODE_ENV || 'development'
+    });
   }
 });
 
@@ -365,23 +414,25 @@ app.get('/api/clients/notes-count', async (req, res) => {
     console.error('❌ Get notes count error:', error);
     res.status(500).json({ 
       error: 'Database error',
-      details: error.message 
+      details: error.message,
+      environment: process.env.NODE_ENV || 'development'
     });
   }
 });
 
 // Start server
-app.listen(PORT, async () => {
-  console.log(`🚀 Backend server running on http://localhost:${PORT}`);
-  console.log(`📊 PostgreSQL database: crm_demo`);
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`🚀 Backend server running on port: ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📊 PostgreSQL URL: ${process.env.DATABASE_URL ? 'configured' : 'not configured'}`);
+  console.log(`🔧 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:5173'}`);
   console.log(`🔐 Demo login: demo@demo.com / demo123`);
-  console.log(`🐛 Debug endpoint: http://localhost:${PORT}/api/debug/database`);
   
   // Testiraj konekciju pri pokretanju
   const dbConnected = await testDatabaseConnection();
   if (!dbConnected) {
     console.log('❌ WARNING: Cannot connect to database!');
-    console.log('💡 Check if PostgreSQL container is running: docker-compose ps');
-    console.log('💡 Check database port and credentials');
+  } else {
+    console.log('✅ Database connection established');
   }
 });

@@ -1,12 +1,10 @@
 import pkg from 'pg';
 const { Pool } = pkg;
 
+// Database configuration za Upsun - koristi DATABASE_URL iz environment varijabli
 export const pool = new Pool({
-  user: 'crm_user',
-  host: 'localhost',
-  database: 'crm_demo',
-  password: 'crm_password',
-  port: 5433,
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
 // Graceful shutdown
