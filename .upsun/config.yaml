@@ -1,4 +1,5 @@
 applications:
+  # Frontend aplikacija (Vue.js)
   frontend:
     source:
       root: frontend
@@ -31,6 +32,7 @@ applications:
     relationships:
       backend: 'backend:http'
   
+  # Backend aplikacija (Express.js)
   backend:
     source:
       root: backend
@@ -67,7 +69,10 @@ applications:
 services:
   postgresql:
     type: postgresql:15
-    disk: 2048
+    configuration:
+      extensions:
+        - pg_trgm
+        - uuid-ossp
 
 routes:
   "https://{default}/":
