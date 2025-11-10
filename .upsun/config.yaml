@@ -1,31 +1,57 @@
+# .upsun/config.yaml
 applications:
-  # Vue.js 3 Frontend
   frontend:
-      web:
-        locations:
-          "/":
-            root: "dist"
-            index: ["index.html"]
-            expires: 1h
-            scripts: false
-            allow: false
-            passthru: "/index.html"
-          "/assets":
-            root: "dist/assets"
-            expires: 1y
-            scripts: false
+    type: nodejs:20
+    source:
+      root: "frontend"
+    build:
+      flavor: none
+    hooks:
+      build: |
+        npm ci
+        npm run build
+    web:
       locations:
-  # Express.js Backend
+        "/":
+          root: "dist"
+          index: ["index.html"]
+          expires: 1h
+          scripts: false
+          allow: false
+          passthru: "/index.html"
+        "/assets":
+          root: "dist/assets"
+          expires: 1y
+          scripts: false
+
   backend:
+    type: nodejs:20
+    source:
+      root: "backend"
+    build:
+      flavor: none
+    hooks:
+      build: |
+        npm ci
+    web:
+      commands:
+        start: node server.js
+      upstream:
+        socket_family: tcp
+    relationships:
+      database:
+        service: postgresql
+        endpoint: postgresql
+
 services:
   postgresql:
     type: postgresql:15
 
+# RUTE MORAJU BITI NA ROOT RAZINI!
 routes:
   "https://{default}/":
     type: upstream
     upstream: "frontend:http"
-    
   "https://{default}/api/":
     type: upstream
     upstream: "backend:http"
