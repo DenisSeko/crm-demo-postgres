@@ -13,19 +13,20 @@ applications:
         export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
         npm ci
         npm run build
-        # PREMIJESTI dist/ u root aplikacije
-        cp -r dist/* ../
+        # PREMIJESTI dist/ u root aplikacije (frontend/)
+        cp -r dist/* .
+        cp -r dist/.* . 2>/dev/null || true  # za .well-known, ako postoji
     web:
       locations:
         "/":
-          root: "."  # dist/ je sada u rootu (frontend/)
+          root: "/"  # Upsun dozvoljava samo "/"
           index: ["index.html"]
           expires: 1h
           scripts: false
           allow: false
           passthru: "/index.html"
         "/assets":
-          root: "assets"
+          root: "/assets"
           expires: 1y
           scripts: false
 
