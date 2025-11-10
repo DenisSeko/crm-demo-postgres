@@ -3,25 +3,25 @@ applications:
   frontend:
     type: nodejs:20
     source:
-      root: "frontend"
+      root: "frontend"  # Upsun radi iz ovog foldera
     build:
       flavor: none
     hooks:
       build: |
-        cd ../
-        npm ci --prefix frontend
-        npm run build --prefix frontend
+        # VEĆ SI U frontend/ – NE IZLAZI!
+        npm ci
+        npm run build
     web:
       locations:
         "/":
-          root: "frontend/dist"
+          root: "dist"  # dist/ je unutar frontend/
           index: ["index.html"]
           expires: 1h
           scripts: false
           allow: false
-          passthru: "/index.html"  # SPA fallback!
+          passthru: "/index.html"
         "/assets":
-          root: "frontend/dist/assets"
+          root: "dist/assets"
           expires: 1y
           scripts: false
 
@@ -48,7 +48,6 @@ services:
   postgresql:
     type: postgresql:15
 
-# RUTE NA ROOT RAZINI
 routes:
   "https://{default}/":
     type: upstream
