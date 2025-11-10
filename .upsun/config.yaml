@@ -59,7 +59,9 @@ applications:
         source_path: npm_cache
     
     relationships:
-      database: 'postgresql:postgresql'
+      database:
+        service: postgresql
+        endpoint: postgresql
     
     variables:
       env:
