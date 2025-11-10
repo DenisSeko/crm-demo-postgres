@@ -1,65 +1,84 @@
-# .upsun/config.yaml
 applications:
   frontend:
-    type: nodejs:20
     source:
-      root: "frontend"
-    build:
-      flavor: none
+      root: frontend
+    
+    type: 'nodejs:20'
+    
     hooks:
       build: |
-        export NODE_VERSION=20.19.0
-        curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
-        export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
         npm ci
         npm run build
-        # PREMIJESTI dist/ u root aplikacije (frontend/)
-        cp -r dist/* . 2>/dev/null || true
-        cp -r dist/.* . 2>/dev/null || true
+    
     web:
       locations:
-        "/":
-          root: ""  # Upsun dozvoljava samo prazan string za root
-          index: ["index.html"]
+        '/':
+          root: 'dist'
+          index: ['index.html']
           expires: 1h
-          scripts: false
-          allow: false
-          passthru: "/index.html"
-        "/assets":
-          root: "assets"  # bez /
-          expires: 1y
-          scripts: false
-
+          allow: true
+          passthru: '/index.html'
+          rules:
+            \.(css|js|gif|jpe?g|png|svg|ico|woff2?)$:
+              allow: true
+              expires: 1M
+    
+    mounts:
+      '/.npm':
+        source: local
+        source_path: npm_cache
+    
+    relationships:
+      backend: 'backend:http'
+  
   backend:
-    type: nodejs:20
     source:
-      root: "backend"
-    build:
-      flavor: none
+      root: backend
+    
+    type: 'nodejs:20'
+    
     hooks:
       build: |
-        export NODE_VERSION=20.19.0
-        curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
-        export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
-        npm ci
+        npm ci --omit=dev
+      deploy: |
+        node init-db.js
+    
     web:
       commands:
-        start: node server.js
-      upstream:
-        socket_family: tcp
+        start: 'node server.js'
+      locations:
+        '/':
+          passthru: true
+          allow: false
+    
+    mounts:
+      '/.npm':
+        source: local
+        source_path: npm_cache
+    
     relationships:
-      database:
-        service: postgresql
-        endpoint: postgresql
+      database: 'postgresql:postgresql'
+    
+    variables:
+      env:
+        NODE_ENV: 'production'
+        PORT: '8080'
 
 services:
   postgresql:
     type: postgresql:15
+    disk: 2048
 
 routes:
   "https://{default}/":
     type: upstream
     upstream: "frontend:http"
+    cache:
+      enabled: true
+      default_ttl: 3600
+  
   "https://{default}/api/":
     type: upstream
     upstream: "backend:http"
+    cache:
+      enabled: false
