@@ -1,20 +1,19 @@
 # .upsun/config.yaml
 applications:
   frontend:
-    type: nodejs:20
+    type: nodejs:20.19  # ← OVAKO POSTAVIŠ VERZIJU!
     source:
-      root: "frontend"  # Upsun ide u frontend/
+      root: "frontend"
     build:
       flavor: none
     hooks:
       build: |
-        # Upsun je u frontend/ – npm ci radi ovdje
         npm ci
         npm run build
     web:
       locations:
         "/":
-          root: "dist"  # dist/ je u frontend/dist/
+          root: "dist"
           index: ["index.html"]
           expires: 1h
           scripts: false
@@ -26,7 +25,7 @@ applications:
           scripts: false
 
   backend:
-    type: nodejs:20
+    type: nodejs:20.19  # ← I backend na novu verziju
     source:
       root: "backend"
     build:
