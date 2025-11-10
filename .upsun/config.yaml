@@ -3,18 +3,18 @@ applications:
   frontend:
     type: nodejs:20
     source:
-      root: "frontend"  # Upsun radi iz ovog foldera
+      root: "frontend"  # Upsun ide u frontend/
     build:
       flavor: none
     hooks:
       build: |
-        # VEĆ SI U frontend/ – NE IZLAZI!
+        # Upsun je u frontend/ – npm ci radi ovdje
         npm ci
         npm run build
     web:
       locations:
         "/":
-          root: "dist"  # dist/ je unutar frontend/
+          root: "dist"  # dist/ je u frontend/dist/
           index: ["index.html"]
           expires: 1h
           scripts: false
