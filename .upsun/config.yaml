@@ -1,48 +1,22 @@
 applications:
   # Vue.js 3 Frontend
   frontend:
-    type: nodejs:20
-    source:
-      root: "frontend"
-    build:
-      flavor: none
-    hooks:
-      build: |
-        npm ci
-        npm run build
-    web:
-      commands:
-        start: npm run preview --port 3000 --host 0.0.0.0
+      web:
+        locations:
+          "/":
+            root: "dist"
+            index: ["index.html"]
+            expires: 1h
+            scripts: false
+            allow: false
+            passthru: "/index.html"
+          "/assets":
+            root: "dist/assets"
+            expires: 1y
+            scripts: false
       locations:
-        "/":
-          root: "dist"
-          expires: 1h
-          passthru: true
-        "/assets":
-          root: "dist/assets"
-          expires: 1y
-          scripts: false
-
   # Express.js Backend
   backend:
-    type: nodejs:20
-    source:
-      root: "backend"
-    build:
-      flavor: none
-    hooks:
-      build: |
-        npm ci
-    web:
-      commands:
-        start: node server.js
-      upstream:
-        socket_family: tcp
-    relationships:
-      database:
-        service: postgresql
-        endpoint: postgresql
-
 services:
   postgresql:
     type: postgresql:15
