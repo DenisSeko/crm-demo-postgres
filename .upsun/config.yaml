@@ -1,13 +1,18 @@
 # .upsun/config.yaml
 applications:
   frontend:
-    type: nodejs:20.19  # ← OVAKO POSTAVIŠ VERZIJU!
+    type: nodejs:20  # Upsun podržava samo glavne verzije
     source:
       root: "frontend"
     build:
       flavor: none
     hooks:
       build: |
+        # Postavi Node.js 20.19+ prije npm ci
+        export NODE_VERSION=20.19.0
+        curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
+        export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
+        node -v  # → v20.19.0
         npm ci
         npm run build
     web:
@@ -25,13 +30,17 @@ applications:
           scripts: false
 
   backend:
-    type: nodejs:20.19  # ← I backend na novu verziju
+    type: nodejs:20
     source:
       root: "backend"
     build:
       flavor: none
     hooks:
       build: |
+        # Isto za backend
+        export NODE_VERSION=20.19.0
+        curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
+        export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
         npm ci
     web:
       commands:
