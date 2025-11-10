@@ -8,19 +8,20 @@ applications:
       flavor: none
     hooks:
       build: |
-        npm ci
-        npm run build
+        cd ../
+        npm ci --prefix frontend
+        npm run build --prefix frontend
     web:
       locations:
         "/":
-          root: "dist"
+          root: "frontend/dist"
           index: ["index.html"]
           expires: 1h
           scripts: false
           allow: false
-          passthru: "/index.html"
+          passthru: "/index.html"  # SPA fallback!
         "/assets":
-          root: "dist/assets"
+          root: "frontend/dist/assets"
           expires: 1y
           scripts: false
 
@@ -47,7 +48,7 @@ services:
   postgresql:
     type: postgresql:15
 
-# RUTE MORAJU BITI NA ROOT RAZINI!
+# RUTE NA ROOT RAZINI
 routes:
   "https://{default}/":
     type: upstream
