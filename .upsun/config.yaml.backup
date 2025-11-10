@@ -1,0 +1,31 @@
+applications:
+  # Vue.js 3 Frontend
+  frontend:
+      web:
+        locations:
+          "/":
+            root: "dist"
+            index: ["index.html"]
+            expires: 1h
+            scripts: false
+            allow: false
+            passthru: "/index.html"
+          "/assets":
+            root: "dist/assets"
+            expires: 1y
+            scripts: false
+      locations:
+  # Express.js Backend
+  backend:
+services:
+  postgresql:
+    type: postgresql:15
+
+routes:
+  "https://{default}/":
+    type: upstream
+    upstream: "frontend:http"
+    
+  "https://{default}/api/":
+    type: upstream
+    upstream: "backend:http"
