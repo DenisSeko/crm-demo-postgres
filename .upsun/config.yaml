@@ -1,31 +1,31 @@
 # .upsun/config.yaml
 applications:
   frontend:
-    type: nodejs:20  # Upsun podržava samo glavne verzije
+    type: nodejs:20
     source:
       root: "frontend"
     build:
       flavor: none
     hooks:
       build: |
-        # Postavi Node.js 20.19+ prije npm ci
         export NODE_VERSION=20.19.0
         curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
         export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
-        node -v  # → v20.19.0
         npm ci
         npm run build
+        # PREMIJESTI dist/ u root aplikacije
+        cp -r dist/* ../
     web:
       locations:
         "/":
-          root: "dist"
+          root: "."  # dist/ je sada u rootu (frontend/)
           index: ["index.html"]
           expires: 1h
           scripts: false
           allow: false
           passthru: "/index.html"
         "/assets":
-          root: "dist/assets"
+          root: "assets"
           expires: 1y
           scripts: false
 
@@ -37,7 +37,6 @@ applications:
       flavor: none
     hooks:
       build: |
-        # Isto za backend
         export NODE_VERSION=20.19.0
         curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
         export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
