@@ -1,4 +1,3 @@
-# .upsun/config.yaml
 applications:
   frontend:
     type: nodejs:20
@@ -8,26 +7,20 @@ applications:
       flavor: none
     hooks:
       build: |
-        export NODE_VERSION=20.19.0
-        curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
-        export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
         npm ci
         npm run build
-        cp -r dist/* . 2>/dev/null || true
-        cp -r dist/.* . 2>/dev/null || true
     web:
       locations:
         "/":
-          root: ""
-          index: ["index.html"]
-          expires: 1h
-          scripts: false
-          allow: false
-          passthru: "/index.html"
+          # Koristimo passthru za SPA routing
+          passthru: true
+          expires: -1
+          allow: true
+          scripts: true
         "/assets":
-          root: "assets"
+          root: "dist/assets"
           expires: 1y
-          scripts: false
+          allow: true
 
   backend:
     type: nodejs:20
@@ -37,18 +30,10 @@ applications:
       flavor: none
     hooks:
       build: |
-        export NODE_VERSION=20.19.0
-        curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
-        export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
         npm ci
-    # UKLONI deploy hook ako nemaš init-db.js
-    # hooks:
-    #   deploy: node init-db.js
     web:
       commands:
-        start: node server.js
-      upstream:
-        socket_family: tcp
+        start: "node server.js"
     relationships:
       database:
         service: postgresql

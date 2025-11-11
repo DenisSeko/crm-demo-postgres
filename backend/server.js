@@ -13,8 +13,12 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
+// CORS konfiguracija za Upsun
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: [
+    'https://staging-5em2ouy-ndb75vqywwrn6.eu-5.platformsh.site',
+    'http://localhost:5173'
+  ],
   credentials: true
 }));
 app.use(express.json());
@@ -32,8 +36,14 @@ async function testDatabaseConnection() {
   }
 }
 
-// Osnovni endpoint
-app.get('/', (req, res) => {
+// **DODAJTE OVAJ MIDDLEWARE ZA /api RUTE**
+app.use('/api', (req, res, next) => {
+  console.log(`📨 API Request: ${req.method} ${req.path}`);
+  next();
+});
+
+// Osnovni endpoint - OVO JE VAŽNO ZA /api/
+app.get('/api', (req, res) => {
   res.json({ 
     message: 'CRM Backend API is running!',
     environment: process.env.NODE_ENV || 'development',
@@ -43,14 +53,6 @@ app.get('/', (req, res) => {
 });
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// API health check
 app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
@@ -278,17 +280,36 @@ app.get('/api/debug/database', async (req, res) => {
   }
 });
 
+// **DODAJTE ERROR HANDLING MIDDLEWARE**
+app.use((error, req, res, next) => {
+  console.error('💥 Global error handler:', error);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: error.message 
+  });
+});
+
+// **DODAJTE 404 HANDLER ZA /api RUTE**
+app.use('/api', (req, res) => {
+  res.status(404).json({ 
+    error: 'API endpoint not found',
+    path: req.path,
+    method: req.method
+  });
+});
+
 // Start server
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 CRM Backend running on port: ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📊 Database: connected`);
-  console.log(`🔗 URL: https://staging-5em2ouy-ndb75vqywwrn6.eu-5.platformsh.site`);
+  console.log(`🔗 API URL: https://staging-5em2ouy-ndb75vqywwrn6.eu-5.platformsh.site/api`);
   console.log(`🔐 Demo login: demo@demo.com / demo123`);
   
   // Testiraj konekciju
   const dbConnected = await testDatabaseConnection();
   if (dbConnected) {
     console.log('✅ Database connection established');
+  } else {
+    console.log('❌ Database connection failed - check DATABASE_URL');
   }
 });
