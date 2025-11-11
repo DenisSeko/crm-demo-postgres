@@ -36,13 +36,121 @@ start_postgres() {
 init_database() {
     echo "🔄 Inicijaliziram bazu..."
     cd backend
-    if node database/init.js; then
-        echo "✅ Baza inicijalizirana!"
+    
+    # Postavi DATABASE_URL za lokalni development
+    export DATABASE_URL="postgresql://crm_user:crm_password@localhost:5433/crm_demo"
+    echo "🔧 DATABASE_URL: postgresql://crm_user:****@localhost:5433/crm_demo"
+    
+    # Sačekaj malo da se baza potpuno pokrene
+    sleep 3
+    
+    # Prvo provjeri je li baza dostupna
+    echo "🔍 Provjeravam dostupnost baze..."
+    if node -e "
+        import pkg from 'pg';
+        const { Pool } = pkg;
+        const pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: false
+        });
+        
+        pool.query('SELECT 1')
+            .then(() => {
+                console.log('✅ Baza je dostupna');
+                process.exit(0);
+            })
+            .catch(err => {
+                console.error('❌ Baza nije dostupna:', err.message);
+                process.exit(1);
+            });
+    "; then
+        echo "✅ Baza je dostupna, pokrećem inicijalizaciju..."
+        
+        # Pokreni inicijalizaciju
+        if node database/init.js; then
+            echo "✅ Baza inicijalizirana!"
+        else
+            echo "❌ Greška pri inicijalizaciji baze"
+            # Probaj s jednostavnijom inicijalizacijom
+            echo "🔄 Pokušavam s jednostavnijom inicijalizacijom..."
+            simple_init
+        fi
     else
-        echo "❌ Greška pri inicijalizaciji baze"
-        exit 1
+        echo "❌ Baza nije dostupna, preskačem inicijalizaciju"
     fi
     cd ..
+}
+
+# Jednostavna inicijalizacija ako glavna faila
+simple_init() {
+    echo "🔄 Pokrećem jednostavnu inicijalizaciju baze..."
+    node -e "
+        import pkg from 'pg';
+        const { Pool } = pkg;
+        
+        const pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: false
+        });
+        
+        async function simpleInit() {
+            const client = await pool.connect();
+            try {
+                // Kreiraj tablice sa SERIAL umjesto UUID
+                await client.query(\`
+                    CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        email VARCHAR(255) UNIQUE NOT NULL,
+                        password VARCHAR(255) NOT NULL,
+                        name VARCHAR(255) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                \`);
+                
+                await client.query(\`
+                    CREATE TABLE IF NOT EXISTS clients (
+                        id SERIAL PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL,
+                        email VARCHAR(255) NOT NULL,
+                        company VARCHAR(255),
+                        owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                \`);
+                
+                await client.query(\`
+                    CREATE TABLE IF NOT EXISTS notes (
+                        id SERIAL PRIMARY KEY,
+                        content TEXT NOT NULL,
+                        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                \`);
+                
+                console.log('✅ Tablice kreirane');
+                
+                // Dodaj demo korisnika
+                const result = await client.query(
+                    'INSERT INTO users (email, password, name) VALUES (\$1, \$2, \$3) ON CONFLICT (email) DO NOTHING RETURNING id',
+                    ['demo@demo.com', 'demo123', 'Demo User']
+                );
+                
+                if (result.rows.length > 0) {
+                    console.log('✅ Demo korisnik dodan: demo@demo.com / demo123');
+                } else {
+                    console.log('ℹ️  Demo korisnik već postoji');
+                }
+                
+            } catch (error) {
+                console.error('❌ Greška:', error.message);
+            } finally {
+                client.release();
+                await pool.end();
+            }
+        }
+        
+        simpleInit();
+    "
 }
 
 # Funkcija za instalaciju dependencies
@@ -72,6 +180,9 @@ start_services() {
     pkill -f "node.*server.js" 2>/dev/null || true
     pkill -f "vite" 2>/dev/null || true
     
+    # Postavi DATABASE_URL za backend
+    export DATABASE_URL="postgresql://crm_user:crm_password@localhost:5433/crm_demo"
+    
     # Pokreni backend
     cd backend
     npm run dev &
@@ -80,8 +191,8 @@ start_services() {
     cd ..
     
     # Sačekaj da backend pokrene
-    echo "⏳ Čekam backend..."
-    sleep 3
+    echo "⏳ Čekam backend (5 sekundi)..."
+    sleep 5
     
     # Pokreni frontend
     cd frontend
