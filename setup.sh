@@ -34,7 +34,7 @@ cd $PROJECT_DIR
 echo "✅ Direktorij kreiran"
 
 # Kreiraj kompletnu strukturu direktorija
-mkdir -p backend frontend/src/components backend/database/init-scripts database/backup
+mkdir -p backend frontend/src/components frontend/src/services backend/database/init-scripts database/backup
 
 # 1. Backend package.json
 cat > backend/package.json << 'BACKEND_EOF'
@@ -80,13 +80,16 @@ cat > backend/database/init.js << 'INIT_EOF'
 import { pool } from './config.js';
 
 async function initDatabase() {
+  let client;
   try {
     console.log('🔄 Inicijalizacija baze podataka...');
 
-    // Kreiraj tabele
-    await pool.query(`
+    client = await pool.connect();
+
+    // Koristite SERIAL umjesto UUID za jednostavnost
+    await client.query(`
       CREATE TABLE IF NOT EXISTS users (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id SERIAL PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
         name VARCHAR(255) NOT NULL,
@@ -94,22 +97,22 @@ async function initDatabase() {
       )
     `);
 
-    await pool.query(`
+    await client.query(`
       CREATE TABLE IF NOT EXISTS clients (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255) NOT NULL,
         company VARCHAR(255),
-        owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
-    await pool.query(`
+    await client.query(`
       CREATE TABLE IF NOT EXISTS notes (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id SERIAL PRIMARY KEY,
         content TEXT NOT NULL,
-        client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -117,22 +120,18 @@ async function initDatabase() {
     console.log('✅ Tabele kreirane uspješno');
 
     // Seed podaci
-    const demoPassword = 'demo123';
-    
-    // Ubaci demo korisnika
-    const userResult = await pool.query(
+    const userResult = await client.query(
       `INSERT INTO users (email, password, name) 
        VALUES ($1, $2, $3) 
        ON CONFLICT (email) DO NOTHING
        RETURNING id`,
-      ['demo@demo.com', demoPassword, 'Demo User']
+      ['demo@demo.com', 'demo123', 'Demo User']
     );
 
     if (userResult.rows.length > 0) {
       const userId = userResult.rows[0].id;
       
-      // Ubaci demo klijente
-      await pool.query(`
+      await client.query(`
         INSERT INTO clients (name, email, company, owner_id) 
         VALUES 
           ('Alpha Corp', 'contact@alpha.com', 'Alpha Corp', $1),
@@ -140,20 +139,6 @@ async function initDatabase() {
           ('Gamma Inc', 'hello@gamma.com', 'Gamma Inc', $1)
         ON CONFLICT DO NOTHING
       `, [userId]);
-
-      // Ubaci demo bilješke
-      const clientResult = await pool.query('SELECT id FROM clients LIMIT 1');
-      const clientId = clientResult.rows[0]?.id;
-      
-      if (clientId) {
-        await pool.query(`
-          INSERT INTO notes (content, client_id) 
-          VALUES 
-            ('Prvi kontakt - zainteresirani za naš proizvod', $1),
-            ('Slanje ponude - čekamo odgovor', $1)
-          ON CONFLICT DO NOTHING
-        `, [clientId]);
-      }
 
       console.log('✅ Seed podaci dodani uspješno');
     } else {
@@ -164,31 +149,42 @@ async function initDatabase() {
     
   } catch (error) {
     console.error('❌ Greška pri inicijalizaciji baze:', error);
-    process.exit(1);
   } finally {
-    await pool.end();
+    if (client) {
+      client.release();
+    }
+    // NE zatvarajte pool!
   }
 }
 
-initDatabase();
+// Pokreni samo ako se skripta poziva direktno
+if (import.meta.url === `file://${process.argv[1]}`) {
+  initDatabase();
+}
+
+export { initDatabase };
 INIT_EOF
 
-# 4. Backend server.js
+# 4. Backend server.js - PORT 8888
 cat > backend/server.js << 'SERVER_EOF'
 import express from 'express';
 import cors from 'cors';
 import { pool } from './database/config.js';
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 8888; // PROMJENA: Port 8888
 
+// Database configuration
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: [
+    'https://staging-5em2ouy-ndb75vqywwrn6.eu-5.platformsh.site',
+    'http://localhost:5173'
+  ],
   credentials: true
 }));
 app.use(express.json());
 
-// Test konekcije na bazu pri pokretanju
+// Test konekcije na bazu
 async function testDatabaseConnection() {
   try {
     const client = await pool.connect();
@@ -201,10 +197,18 @@ async function testDatabaseConnection() {
   }
 }
 
-// Osnovni endpoint
-app.get('/', (req, res) => {
+// **DODAJTE OVAJ MIDDLEWARE ZA /api RUTE**
+app.use('/api', (req, res, next) => {
+  console.log(`📨 API Request: ${req.method} ${req.path}`);
+  next();
+});
+
+// Osnovni endpoint - OVO JE VAŽNO ZA /api/
+app.get('/api', (req, res) => {
   res.json({ 
     message: 'CRM Backend API is running!',
+    environment: process.env.NODE_ENV || 'development',
+    database: 'connected',
     timestamp: new Date().toISOString()
   });
 });
@@ -215,105 +219,20 @@ app.get('/api/health', async (req, res) => {
     await pool.query('SELECT 1');
     res.json({ 
       status: 'OK', 
-      database: 'connected',
-      timestamp: new Date().toISOString()
+      environment: process.env.NODE_ENV || 'development',
+      database: 'connected'
     });
   } catch (error) {
-    console.error('Health check failed:', error.message);
     res.status(500).json({ 
-      status: 'ERROR', 
-      database: 'disconnected',
-      error: error.message,
-      timestamp: new Date().toISOString()
+      status: 'ERROR',
+      environment: process.env.NODE_ENV || 'development',
+      database: 'error',
+      error: error.message
     });
   }
 });
 
-// Debug endpoint za provjeru stanja baze
-app.get('/api/debug/database', async (req, res) => {
-  try {
-    console.log('🔍 Debug database check...');
-    
-    const client = await pool.connect();
-    
-    const tablesResult = await client.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
-      ORDER BY table_name
-    `);
-
-    const tableCounts = {};
-    const tableData = {};
-    
-    for (let table of tablesResult.rows) {
-      const tableName = table.table_name;
-      
-      // Broj redova
-      const countResult = await client.query(`SELECT COUNT(*) as count FROM ${tableName}`);
-      tableCounts[tableName] = parseInt(countResult.rows[0].count);
-      
-      // Prvih 5 redova (ako postoje)
-      if (tableCounts[tableName] > 0) {
-        const dataResult = await client.query(`SELECT * FROM ${tableName} LIMIT 3`);
-        tableData[tableName] = dataResult.rows;
-      } else {
-        tableData[tableName] = [];
-      }
-    }
-
-    client.release();
-
-    const debugInfo = {
-      tables: tablesResult.rows.map(row => row.table_name),
-      counts: tableCounts,
-      sampleData: tableData,
-      connection: 'successful',
-      timestamp: new Date().toISOString()
-    };
-
-    console.log('📊 Debug info:', debugInfo);
-    res.json(debugInfo);
-
-  } catch (error) {
-    console.error('❌ Debug database error:', error);
-    res.status(500).json({
-      error: error.message,
-      connection: 'failed',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Stats endpoint - AŽURIRANA VERZIJA
-app.get('/api/clients/stats', async (req, res) => {
-  try {
-    console.log('📊 Getting stats...');
-    
-    const clientsResult = await pool.query('SELECT COUNT(*) as count FROM clients');
-    const notesResult = await pool.query('SELECT COUNT(*) as count FROM notes');
-    const lastNoteResult = await pool.query(
-      'SELECT content FROM notes ORDER BY created_at DESC LIMIT 1'
-    );
-
-    const stats = {
-      clients: parseInt(clientsResult.rows[0].count),
-      totalNotes: parseInt(notesResult.rows[0].count),
-      lastNote: lastNoteResult.rows[0]?.content || 'Nema bilježki'
-    };
-
-    console.log('📈 Stats calculated:', stats);
-    res.json(stats);
-  } catch (error) {
-    console.error('❌ Get stats error:', error);
-    res.status(500).json({ 
-      error: 'Database error',
-      details: error.message 
-    });
-  }
-});
-
-// Login endpoint
+// LOGIN ENDPOINT
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -344,7 +263,7 @@ app.post('/api/login', async (req, res) => {
           id: user.id, 
           email: user.email, 
           name: user.name 
-        } 
+        }
       });
     } else {
       console.log('❌ Password mismatch for:', email);
@@ -356,7 +275,7 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Clients endpoints s boljim error handlingom
+// Clients endpoints
 app.get('/api/clients', async (req, res) => {
   try {
     console.log('📋 Getting clients list...');
@@ -368,12 +287,7 @@ app.get('/api/clients', async (req, res) => {
     
   } catch (error) {
     console.error('❌ Get clients error:', error.message);
-    
-    res.status(500).json({ 
-      error: 'Database error',
-      message: error.message,
-      details: 'Check if database is running and tables exist'
-    });
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
@@ -402,29 +316,6 @@ app.post('/api/clients', async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Create client error:', error);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-app.delete('/api/clients/:id', async (req, res) => {
-  const { id } = req.params;
-
-  console.log('🗑️ Deleting client:', id);
-
-  try {
-    const result = await pool.query(
-      'DELETE FROM clients WHERE id = $1 RETURNING *',
-      [id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Client not found' });
-    }
-    
-    console.log('✅ Client deleted:', result.rows[0].name);
-    res.json({ message: 'Client deleted', client: result.rows[0] });
-  } catch (error) {
-    console.error('Delete client error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -460,16 +351,6 @@ app.post('/api/clients/:id/notes', async (req, res) => {
   }
 
   try {
-    // Provjeri da klijent postoji
-    const clientCheck = await pool.query(
-      'SELECT id FROM clients WHERE id = $1',
-      [id]
-    );
-
-    if (clientCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Client not found' });
-    }
-
     const result = await pool.query(
       `INSERT INTO notes (content, client_id) 
        VALUES ($1, $2) 
@@ -485,81 +366,112 @@ app.post('/api/clients/:id/notes', async (req, res) => {
   }
 });
 
-// DELETE endpoint za brisanje bilješki
-app.delete('/api/notes/:id', async (req, res) => {
-  const { id } = req.params;
-
-  console.log('🗑️ Deleting note:', id);
-
+// Stats endpoint
+app.get('/api/clients/stats', async (req, res) => {
   try {
-    const result = await pool.query(
-      'DELETE FROM notes WHERE id = $1 RETURNING *',
-      [id]
+    console.log('📊 Getting stats...');
+    
+    const clientsResult = await pool.query('SELECT COUNT(*) as count FROM clients');
+    const notesResult = await pool.query('SELECT COUNT(*) as count FROM notes');
+    const lastNoteResult = await pool.query(
+      'SELECT content FROM notes ORDER BY created_at DESC LIMIT 1'
     );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Bilješka nije pronađena' });
-    }
-    
-    console.log('✅ Note deleted:', result.rows[0].id);
-    res.json({ 
-      message: 'Bilješka uspješno obrisana', 
-      note: result.rows[0] 
-    });
+
+    const stats = {
+      clients: parseInt(clientsResult.rows[0].count),
+      totalNotes: parseInt(notesResult.rows[0].count),
+      lastNote: lastNoteResult.rows[0]?.content || 'Nema bilježki'
+    };
+
+    console.log('📈 Stats calculated:', stats);
+    res.json(stats);
   } catch (error) {
-    console.error('Delete note error:', error);
-    res.status(500).json({ error: 'Greška pri brisanju bilješke' });
+    console.error('❌ Get stats error:', error);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// Novi endpoint za dobivanje broja bilješki po klijentu
-app.get('/api/clients/notes-count', async (req, res) => {
+// Debug endpoint za provjeru stanja baze
+app.get('/api/debug/database', async (req, res) => {
   try {
-    console.log('📊 Getting notes count per client...');
+    console.log('🔍 Debug database check...');
     
-    const result = await pool.query(`
-      SELECT 
-        c.id as client_id,
-        c.name as client_name,
-        COUNT(n.id) as notes_count
-      FROM clients c
-      LEFT JOIN notes n ON c.id = n.client_id
-      GROUP BY c.id, c.name
-      ORDER BY c.name
+    const client = await pool.connect();
+    
+    const tablesResult = await client.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+      ORDER BY table_name
     `);
 
-    const notesCount = {};
-    result.rows.forEach(row => {
-      notesCount[row.client_id] = {
-        count: parseInt(row.notes_count),
-        name: row.client_name
-      };
-    });
+    const tableCounts = {};
+    
+    for (let table of tablesResult.rows) {
+      const tableName = table.table_name;
+      try {
+        const countResult = await client.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
+        tableCounts[tableName] = parseInt(countResult.rows[0].count);
+      } catch (tableError) {
+        tableCounts[tableName] = -1;
+      }
+    }
 
-    console.log('✅ Notes count per client:', notesCount);
-    res.json(notesCount);
+    client.release();
+
+    const debugInfo = {
+      environment: process.env.NODE_ENV || 'development',
+      tables: tablesResult.rows.map(row => row.table_name),
+      counts: tableCounts,
+      connection: 'successful',
+      timestamp: new Date().toISOString()
+    };
+
+    console.log('📊 Debug info:', debugInfo);
+    res.json(debugInfo);
+
   } catch (error) {
-    console.error('❌ Get notes count error:', error);
-    res.status(500).json({ 
-      error: 'Database error',
-      details: error.message 
+    console.error('❌ Debug database error:', error);
+    res.status(500).json({
+      environment: process.env.NODE_ENV || 'development',
+      error: error.message,
+      connection: 'failed',
+      timestamp: new Date().toISOString()
     });
   }
+});
+
+// **DODAJTE ERROR HANDLING MIDDLEWARE**
+app.use((error, req, res, next) => {
+  console.error('💥 Global error handler:', error);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: error.message 
+  });
+});
+
+// **DODAJTE 404 HANDLER ZA /api RUTE**
+app.use('/api', (req, res) => {
+  res.status(404).json({ 
+    error: 'API endpoint not found',
+    path: req.path,
+    method: req.method
+  });
 });
 
 // Start server
-app.listen(PORT, async () => {
-  console.log(`🚀 Backend server running on http://localhost:${PORT}`);
-  console.log(`📊 PostgreSQL database: crm_demo`);
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`🚀 CRM Backend running on port: ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 API URL: http://localhost:${PORT}/api`);
   console.log(`🔐 Demo login: demo@demo.com / demo123`);
-  console.log(`🐛 Debug endpoint: http://localhost:${PORT}/api/debug/database`);
   
-  // Testiraj konekciju pri pokretanju
+  // Testiraj konekciju
   const dbConnected = await testDatabaseConnection();
-  if (!dbConnected) {
-    console.log('❌ WARNING: Cannot connect to database!');
-    console.log('💡 Check if PostgreSQL container is running: docker-compose ps');
-    console.log('💡 Check database port and credentials');
+  if (dbConnected) {
+    console.log('✅ Database connection established');
+  } else {
+    console.log('❌ Database connection failed - check DATABASE_URL');
   }
 });
 SERVER_EOF
@@ -590,27 +502,88 @@ cat > frontend/package.json << 'FRONTEND_EOF'
 }
 FRONTEND_EOF
 
-# 6. Frontend vite.config.js
+# 6. Frontend vite.config.js - ažuriran proxy na port 8888
 cat > frontend/vite.config.js << 'VITE_EOF'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  
+  // Development server config
   server: {
     port: 5173,
+    host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:8888', // PROMJENA: Proxy na backend server port 8888
         changeOrigin: true,
         secure: false
       }
     }
+  },
+  
+  // Production build config
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    emptyOutDir: true
+  },
+  
+  // Preview server config
+  preview: {
+    port: 3000,
+    host: true,
+    allowedHosts: true
   }
 })
 VITE_EOF
 
-# 7. Frontend index.html
+# 7. Centralni API servis
+cat > frontend/src/services/api.js << 'API_EOF'
+import axios from 'axios';
+
+// Odredi base URL ovisno o okruženju
+const API_BASE = import.meta.env.MODE === 'development' 
+  ? 'http://localhost:8888/api'  // PROMJENA: Port 8888
+  : '/api';
+
+console.log('🔧 API Base URL:', API_BASE);
+
+// Kreiraj axios instancu s base URL-om
+const api = axios.create({
+  baseURL: API_BASE,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request interceptor za logging
+api.interceptors.request.use(
+  (config) => {
+    console.log(`🚀 API Call: ${config.method?.toUpperCase()} ${config.url}`);
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor za error handling
+api.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    console.error('💥 API Error:', error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+API_EOF
+
+# 8. Frontend index.html
 cat > frontend/index.html << 'HTML_EOF'
 <!DOCTYPE html>
 <html lang="en">
@@ -628,7 +601,7 @@ cat > frontend/index.html << 'HTML_EOF'
 </html>
 HTML_EOF
 
-# 8. Frontend main.js - ISPRAVLJENA VUE ROUTER KONFIGURACIJA
+# 9. Frontend main.js
 cat > frontend/src/main.js << 'MAIN_EOF'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
@@ -653,7 +626,7 @@ app.use(router)
 app.mount('#app')
 MAIN_EOF
 
-# 9. Frontend App.vue - ISPRAVLJENA VUE ROUTER LOGIKA
+# 10. Frontend App.vue - ažuriran za centralni API
 cat > frontend/src/App.vue << 'APP_EOF'
 <template>
   <div class="min-h-screen bg-gray-50">
@@ -693,7 +666,7 @@ cat > frontend/src/App.vue << 'APP_EOF'
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import api from './services/api' // PROMJENA: import api umjesto axios
 
 // Components
 import AppHeader from './components/AppHeader.vue'
@@ -728,7 +701,8 @@ const login = async (loginData) => {
     // Button spinner delay
     await new Promise(resolve => setTimeout(resolve, 500))
     
-    const response = await axios.post('/api/login', loginData)
+    // PROMJENA: api umjesto axios i uklonjen /api prefix
+    const response = await api.post('/login', loginData)
     const { token, user: userData } = response.data
     
     // Show main loader
@@ -740,7 +714,7 @@ const login = async (loginData) => {
     localStorage.setItem('token', token)
     localStorage.setItem('user', JSON.stringify(userData))
     user.value = userData
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}` // PROMJENA: api umjesto axios
     
     goToHome()
     
@@ -757,7 +731,7 @@ const logout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
   user.value = null
-  delete axios.defaults.headers.common['Authorization']
+  delete api.defaults.headers.common['Authorization'] // PROMJENA: api umjesto axios
   goToHome()
 }
 
@@ -773,7 +747,7 @@ onMounted(() => {
   
   if (savedUser && savedToken) {
     user.value = JSON.parse(savedUser)
-    axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`
+    api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}` // PROMJENA: api umjesto axios
   }
 })
 </script>
@@ -791,9 +765,9 @@ onMounted(() => {
 </style>
 APP_EOF
 
-# 10. Frontend komponente
+# 11. Frontend komponente - ažurirane za centralni API
 
-# 10.1 AppHeader.vue
+# 11.1 AppHeader.vue
 cat > frontend/src/components/AppHeader.vue << 'APPHEADER_EOF'
 <template>
   <nav class="bg-white shadow-sm border-b">
@@ -830,7 +804,7 @@ defineEmits(['go-home', 'logout'])
 </script>
 APPHEADER_EOF
 
-# 10.2 HomePage.vue
+# 11.2 HomePage.vue
 cat > frontend/src/components/HomePage.vue << 'HOMEPAGE_EOF'
 <template>
   <div class="max-w-3xl mx-auto mt-20 p-6 bg-white rounded-lg shadow-md text-center">
@@ -865,7 +839,7 @@ defineEmits(['go-to-login'])
 </script>
 HOMEPAGE_EOF
 
-# 10.3 LoginForm.vue
+# 11.3 LoginForm.vue
 cat > frontend/src/components/LoginForm.vue << 'LOGINFORM_EOF'
 <template>
   <div class="max-w-md mx-auto mt-20 p-6 bg-white rounded-lg shadow-md">
@@ -924,7 +898,7 @@ const loginData = reactive({
 </script>
 LOGINFORM_EOF
 
-# 10.4 Loader.vue
+# 11.4 Loader.vue
 cat > frontend/src/components/Loader.vue << 'LOADER_EOF'
 <template>
   <div class="fixed inset-0 bg-white z-50 flex items-center justify-center">
@@ -950,7 +924,7 @@ defineProps({
 </script>
 LOADER_EOF
 
-# 10.5 Dashboard.vue
+# 11.5 Dashboard.vue - ažuriran za centralni API
 cat > frontend/src/components/Dashboard.vue << 'DASHBOARD_EOF'
 <template>
   <div class="max-w-6xl mx-auto p-6">
@@ -1064,7 +1038,7 @@ cat > frontend/src/components/Dashboard.vue << 'DASHBOARD_EOF'
               </p>
             </div>
             <div class="flex gap-2">
-              <button @click="initLoaderAndToggleNotes(client.id)"
+              <button @click="toggleNotes(client.id)"
                 class="text-blue-600 hover:text-blue-800 px-3 py-2 rounded border border-blue-200 hover:bg-blue-50 transition-colors duration-200 flex items-center gap-2"
                 :title="notesOpen[client.id] ? 'Sakrij bilješke' : 'Prikaži bilješke'"
                 :disabled="loadingNotes[client.id]">
@@ -1157,14 +1131,14 @@ cat > frontend/src/components/Dashboard.vue << 'DASHBOARD_EOF'
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
-import axios from 'axios'
+import { ref, reactive, onMounted } from 'vue'
+import api from '../services/api' // PROMJENA: import api umjesto axios
 
 const clients = ref([])
 const clientNotes = reactive({})
 const notesCount = reactive({})
 const notesOpen = reactive({})
-const loadingNotes = reactive({}) // Loading state za pojedinačne bilješke
+const loadingNotes = reactive({})
 const newNote = reactive({})
 const showNewClient = ref(false)
 const newClient = reactive({
@@ -1183,102 +1157,38 @@ const addingNoteClientId = ref(null)
 const creatingClient = ref(false)
 const deletingClientId = ref(null)
 
-// Nova funkcija koja inicijalizira loader i onda poziva toggleNotes
-const initLoaderAndToggleNotes = async (id) => {
-  console.log('🔄 Inicijaliziram loader za klijenta:', id)
-  
-  // Inicijaliziraj loader na click event
-  loadingNotes[id] = true
-  
-  // Sačekaj da Vue renderira promjenu
-  await nextTick()
-  
-  // Dodaj mali delay da se loader sigurno vidi
-  await new Promise(resolve => setTimeout(resolve, 300))
-  
-  // Pozovi originalnu funkciju
-  await toggleNotes(id)
-}
-
 const toggleNotes = async (id) => {
-  // Ako već postoje podaci, samo toggle-aj bez loadera
-  if (clientNotes[id]) {
-    notesOpen[id] = !notesOpen[id]
-    loadingNotes[id] = false
-    return
-  }
+  notesOpen[id] = !notesOpen[id]
   
-  // Ako nemamo podatke, učitaj ih
-  notesOpen[id] = true
-  await loadNotes(id)
+  if (notesOpen[id] && !clientNotes[id]) {
+    await loadNotes(id)
+  }
 }
 
 const loadNotes = async (id) => {
   try {
+    loadingNotes[id] = true
     console.log('📝 Učitavam bilješke za klijenta:', id)
     
-    // Dodaj veći delay da se loader jasno vidi
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    const response = await axios.get(`/api/clients/${id}/notes`)
+    const response = await api.get(`/clients/${id}/notes`) // PROMJENA: api umjesto axios
     clientNotes[id] = response.data
     console.log('✅ Bilješke učitane:', clientNotes[id].length)
-    
-    // Ažuriraj notesCount
-    if (notesCount[id]) {
-      notesCount[id].count = clientNotes[id].length
-    }
   } catch (error) {
     console.error('Greška pri učitavanju bilješki:', error)
     alert('Greška pri učitavanju bilješki: ' + (error.response?.data?.error || error.message))
   } finally {
-    // Ugasi loader
     loadingNotes[id] = false
   }
-}
-
-// Funkcija za učitavanje broja bilješki po klijentu
-const loadNotesCount = async () => {
-  try {
-    console.log('📊 Učitavam broj bilješki po klijentu...')
-    const response = await axios.get('/api/clients/notes-count')
-    
-    // Očisti prethodne podatke
-    Object.keys(notesCount).forEach(key => delete notesCount[key])
-    
-    // Postavi nove podatke
-    Object.assign(notesCount, response.data)
-    console.log('✅ Broj bilješki po klijentu učitano:', notesCount)
-  } catch (error) {
-    console.error('Greška pri učitavanju broja bilješki:', error)
-    // Fallback: pokušaj ručno izračunati
-    calculateNotesCountFallback()
-  }
-}
-
-// Fallback funkcija ako endpoint ne radi
-const calculateNotesCountFallback = () => {
-  console.log('🔄 Koristim fallback za brojanje bilješki...')
-  clients.value.forEach(client => {
-    if (!notesCount[client.id]) {
-      notesCount[client.id] = {
-        count: clientNotes[client.id]?.length || 0,
-        name: client.name
-      }
-    }
-  })
 }
 
 const loadClients = async () => {
   try {
     loading.value = true
     console.log('📋 Učitavam klijente...')
-    const response = await axios.get('/api/clients')
+    const response = await api.get('/clients') // PROMJENA: api umjesto axios
     clients.value = response.data
     console.log('✅ Klijenti učitani:', clients.value.length)
     
-    // UČITAJ BROJ BILJEŠKI NAKON KLIJENATA
-    await loadNotesCount()
     await loadStats()
   } catch (error) {
     console.error('Greška pri učitavanju klijenata:', error)
@@ -1297,7 +1207,7 @@ const createClient = async () => {
   try {
     creatingClient.value = true
     console.log('➕ Kreiranje klijenta:', newClient)
-    const response = await axios.post('/api/clients', newClient)
+    const response = await api.post('/clients', newClient) // PROMJENA: api umjesto axios
     console.log('✅ Klijent kreiran:', response.data)
     
     Object.assign(newClient, { name: '', email: '', company: '' })
@@ -1323,11 +1233,10 @@ const deleteClient = async (id) => {
   try {
     deletingClientId.value = id
     console.log('🗑️ Brisanje klijenta:', id)
-    await axios.delete(`/api/clients/${id}`)
+    await api.delete(`/clients/${id}`) // PROMJENA: api umjesto axios
     console.log('✅ Klijent obrisan')
     
     await loadClients()
-    await loadStats()
   } catch (error) {
     console.error('Greška pri brisanju klijenata:', error)
     alert('Greška pri brisanju klijenata: ' + (error.response?.data?.error || error.message))
@@ -1345,11 +1254,10 @@ const addNote = async (id) => {
   try {
     addingNoteClientId.value = id
     console.log('➕ Dodavanje bilješke za klijenta:', id, 'Sadržaj:', newNote[id])
-    await axios.post(`/api/clients/${id}/notes`, { content: newNote[id] })
+    await api.post(`/clients/${id}/notes`, { content: newNote[id] }) // PROMJENA: api umjesto axios
     newNote[id] = ''
     
     // OSVJEŽI PODATKE
-    await loadNotesCount()
     if (notesOpen[id]) {
       await loadNotes(id)
     }
@@ -1370,10 +1278,9 @@ const deleteNote = async (noteId, clientId) => {
     deletingNoteId.value = noteId
     console.log('🗑️ Brisanje bilješke:', noteId)
     
-    await axios.delete(`/api/notes/${noteId}`)
+    await api.delete(`/notes/${noteId}`) // PROMJENA: api umjesto axios
     
     // OSVJEŽI PODATKE
-    await loadNotesCount()
     await loadNotes(clientId)
     await loadStats()
     console.log('✅ Bilješka obrisana')
@@ -1392,7 +1299,7 @@ const deleteNote = async (noteId, clientId) => {
 
 const loadStats = async () => {
   try {
-    const response = await axios.get('/api/clients/stats')
+    const response = await api.get('/clients/stats') // PROMJENA: api umjesto axios
     Object.assign(stats, response.data)
     console.log('📊 Statistika učitana:', stats)
   } catch (error) {
@@ -1401,7 +1308,7 @@ const loadStats = async () => {
 }
 
 const getNoteCount = (clientId) => {
-  return notesCount[clientId]?.count || clientNotes[clientId]?.length || 0
+  return clientNotes[clientId]?.length || 0
 }
 
 const getNoteCountDisplay = (clientId) => {
@@ -1450,7 +1357,7 @@ volumes:
   postgres_data:
 DOCKER_EOF
 
-# 13. Start skripta - ažurirana za port 5433
+# 13. NOVA start.sh skripta - ažurirana za portove 8888 i 5173
 cat > start.sh << 'START_EOF'
 #!/bin/bash
 
@@ -1490,11 +1397,44 @@ start_postgres() {
 init_database() {
     echo "🔄 Inicijaliziram bazu..."
     cd backend
-    if node database/init.js; then
-        echo "✅ Baza inicijalizirana!"
+    
+    # Postavi DATABASE_URL za lokalni development
+    export DATABASE_URL="postgresql://crm_user:crm_password@localhost:5433/crm_demo"
+    echo "🔧 DATABASE_URL: postgresql://crm_user:****@localhost:5433/crm_demo"
+    
+    # Sačekaj malo da se baza potpuno pokrene
+    sleep 3
+    
+    # Prvo provjeri je li baza dostupna
+    echo "🔍 Provjeravam dostupnost baze..."
+    if node -e "
+        import pkg from 'pg';
+        const { Pool } = pkg;
+        const pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: false
+        });
+        
+        pool.query('SELECT 1')
+            .then(() => {
+                console.log('✅ Baza je dostupna');
+                process.exit(0);
+            })
+            .catch(err => {
+                console.error('❌ Baza nije dostupna:', err.message);
+                process.exit(1);
+            });
+    "; then
+        echo "✅ Baza je dostupna, pokrećem inicijalizaciju..."
+        
+        # Pokreni inicijalizaciju
+        if node database/init.js; then
+            echo "✅ Baza inicijalizirana!"
+        else
+            echo "❌ Greška pri inicijalizaciji baze"
+        fi
     else
-        echo "❌ Greška pri inicijalizaciji baze"
-        exit 1
+        echo "❌ Baza nije dostupna, preskačem inicijalizaciju"
     fi
     cd ..
 }
@@ -1526,22 +1466,25 @@ start_services() {
     pkill -f "node.*server.js" 2>/dev/null || true
     pkill -f "vite" 2>/dev/null || true
     
-    # Pokreni backend
+    # Postavi DATABASE_URL za backend
+    export DATABASE_URL="postgresql://crm_user:crm_password@localhost:5433/crm_demo"
+    
+    # Pokreni backend (port 8888)
     cd backend
     npm run dev &
     BACKEND_PID=$!
-    echo "✅ Backend pokrenut (PID: $BACKEND_PID)"
+    echo "✅ Backend pokrenut (PID: $BACKEND_PID) na portu 8888"
     cd ..
     
     # Sačekaj da backend pokrene
-    echo "⏳ Čekam backend..."
-    sleep 3
+    echo "⏳ Čekam backend (5 sekundi)..."
+    sleep 5
     
-    # Pokreni frontend
+    # Pokreni frontend (port 5173)
     cd frontend
     npm run dev &
     FRONTEND_PID=$!
-    echo "✅ Frontend pokrenut (PID: $FRONTEND_PID)"
+    echo "✅ Frontend pokrenut (PID: $FRONTEND_PID) na portu 5173"
     cd ..
 }
 
@@ -1562,7 +1505,7 @@ echo "=================================================="
 echo "🎉 CRM DEMO S POSTGRESQL JE POKRENUT!"
 echo "=================================================="
 echo "🌐 Frontend: http://localhost:5173"
-echo "🔧 Backend:  http://localhost:3001"
+echo "🔧 Backend:  http://localhost:8888"
 echo "🗄️  PostgreSQL: localhost:5433"
 echo " "
 echo "🔐 Demo login: demo@demo.com / demo123"
@@ -1611,11 +1554,10 @@ STOP_EOF
 
 chmod +x stop.sh
 
-# 15. README - ažuriran za port 5433
+# 15. README
 cat > README.md << 'README_EOF'
 # 🚀 CRM Demo - PostgreSQL (Port 5433)
 
 Kompletan CRM sistem sa Vue 3, Node.js i PostgreSQL na portu 5433.
 
 ## 🏗️ Struktura Projekta
-README_EOF
