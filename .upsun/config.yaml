@@ -9,14 +9,21 @@ applications:
       build: |
         npm ci
         npm run build
+        # Dodajte provjeru builda
+        if [ ! -d "dist" ]; then
+          echo "❌ Build failed - no dist directory"
+          exit 1
+        fi
+        echo "✅ Build successful"
     web:
       locations:
         "/":
-          # Koristimo passthru za SPA routing
-          passthru: true
+          root: "dist"  # 👈 KLJUČNO: dodajte ovo!
+          index: ["index.html"]
           expires: -1
           allow: true
           scripts: true
+          passthru: true
         "/assets":
           root: "dist/assets"
           expires: 1y
