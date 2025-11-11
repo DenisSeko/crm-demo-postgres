@@ -1,0 +1,65 @@
+# .upsun/config.yaml
+applications:
+  frontend:
+    type: nodejs:20
+    source:
+      root: "frontend"
+    build:
+      flavor: none
+    hooks:
+      build: |
+        export NODE_VERSION=20.19.0
+        curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
+        export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
+        npm ci
+        npm run build
+        # PREMIJESTI dist/ u root aplikacije (frontend/)
+        cp -r dist/* . 2>/dev/null || true
+        cp -r dist/.* . 2>/dev/null || true
+    web:
+      locations:
+        "/":
+          root: ""  # Upsun dozvoljava samo prazan string za root
+          index: ["index.html"]
+          expires: 1h
+          scripts: false
+          allow: false
+          passthru: "/index.html"
+        "/assets":
+          root: "assets"  # bez /
+          expires: 1y
+          scripts: false
+
+  backend:
+    type: nodejs:20
+    source:
+      root: "backend"
+    build:
+      flavor: none
+    hooks:
+      build: |
+        export NODE_VERSION=20.19.0
+        curl -fsSL https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz | tar -xJ
+        export PATH="$PWD/node-v$NODE_VERSION-linux-x64/bin:$PATH"
+        npm ci
+    web:
+      commands:
+        start: node server.js
+      upstream:
+        socket_family: tcp
+    relationships:
+      database:
+        service: postgresql
+        endpoint: postgresql
+
+services:
+  postgresql:
+    type: postgresql:15
+
+routes:
+  "https://{default}/":
+    type: upstream
+    upstream: "frontend:http"
+  "https://{default}/api/":
+    type: upstream
+    upstream: "backend:http"

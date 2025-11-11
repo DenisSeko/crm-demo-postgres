@@ -1,17 +1,29 @@
 import express from 'express';
 import cors from 'cors';
-import { pool } from './database/config.js';
+import pkg from 'pg';
+
+const { Pool } = pkg;
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 8888;
 
+// Database configuration za Upsun
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+// CORS konfiguracija za Upsun
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: [
+    'https://staging-5em2ouy-ndb75vqywwrn6.eu-5.platformsh.site',
+    'http://localhost:5173'
+  ],
   credentials: true
 }));
 app.use(express.json());
 
-// Test konekcije na bazu pri pokretanju
+// Test konekcije na bazu
 async function testDatabaseConnection() {
   try {
     const client = await pool.connect();
@@ -24,10 +36,18 @@ async function testDatabaseConnection() {
   }
 }
 
-// Osnovni endpoint
-app.get('/', (req, res) => {
+// **DODAJTE OVAJ MIDDLEWARE ZA /api RUTE**
+app.use('/api', (req, res, next) => {
+  console.log(`📨 API Request: ${req.method} ${req.path}`);
+  next();
+});
+
+// Osnovni endpoint - OVO JE VAŽNO ZA /api/
+app.get('/api', (req, res) => {
   res.json({ 
     message: 'CRM Backend API is running!',
+    environment: process.env.NODE_ENV || 'development',
+    database: 'connected',
     timestamp: new Date().toISOString()
   });
 });
@@ -38,105 +58,20 @@ app.get('/api/health', async (req, res) => {
     await pool.query('SELECT 1');
     res.json({ 
       status: 'OK', 
-      database: 'connected',
-      timestamp: new Date().toISOString()
+      environment: process.env.NODE_ENV || 'development',
+      database: 'connected'
     });
   } catch (error) {
-    console.error('Health check failed:', error.message);
     res.status(500).json({ 
-      status: 'ERROR', 
-      database: 'disconnected',
-      error: error.message,
-      timestamp: new Date().toISOString()
+      status: 'ERROR',
+      environment: process.env.NODE_ENV || 'development',
+      database: 'error',
+      error: error.message
     });
   }
 });
 
-// Debug endpoint za provjeru stanja baze
-app.get('/api/debug/database', async (req, res) => {
-  try {
-    console.log('🔍 Debug database check...');
-    
-    const client = await pool.connect();
-    
-    const tablesResult = await client.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
-      ORDER BY table_name
-    `);
-
-    const tableCounts = {};
-    const tableData = {};
-    
-    for (let table of tablesResult.rows) {
-      const tableName = table.table_name;
-      
-      // Broj redova
-      const countResult = await client.query(`SELECT COUNT(*) as count FROM ${tableName}`);
-      tableCounts[tableName] = parseInt(countResult.rows[0].count);
-      
-      // Prvih 5 redova (ako postoje)
-      if (tableCounts[tableName] > 0) {
-        const dataResult = await client.query(`SELECT * FROM ${tableName} LIMIT 3`);
-        tableData[tableName] = dataResult.rows;
-      } else {
-        tableData[tableName] = [];
-      }
-    }
-
-    client.release();
-
-    const debugInfo = {
-      tables: tablesResult.rows.map(row => row.table_name),
-      counts: tableCounts,
-      sampleData: tableData,
-      connection: 'successful',
-      timestamp: new Date().toISOString()
-    };
-
-    console.log('📊 Debug info:', debugInfo);
-    res.json(debugInfo);
-
-  } catch (error) {
-    console.error('❌ Debug database error:', error);
-    res.status(500).json({
-      error: error.message,
-      connection: 'failed',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Stats endpoint - AŽURIRANA VERZIJA
-app.get('/api/clients/stats', async (req, res) => {
-  try {
-    console.log('📊 Getting stats...');
-    
-    const clientsResult = await pool.query('SELECT COUNT(*) as count FROM clients');
-    const notesResult = await pool.query('SELECT COUNT(*) as count FROM notes');
-    const lastNoteResult = await pool.query(
-      'SELECT content FROM notes ORDER BY created_at DESC LIMIT 1'
-    );
-
-    const stats = {
-      clients: parseInt(clientsResult.rows[0].count),
-      totalNotes: parseInt(notesResult.rows[0].count),
-      lastNote: lastNoteResult.rows[0]?.content || 'Nema bilježki'
-    };
-
-    console.log('📈 Stats calculated:', stats);
-    res.json(stats);
-  } catch (error) {
-    console.error('❌ Get stats error:', error);
-    res.status(500).json({ 
-      error: 'Database error',
-      details: error.message 
-    });
-  }
-});
-
-// Login endpoint
+// LOGIN ENDPOINT
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -167,7 +102,7 @@ app.post('/api/login', async (req, res) => {
           id: user.id, 
           email: user.email, 
           name: user.name 
-        } 
+        }
       });
     } else {
       console.log('❌ Password mismatch for:', email);
@@ -179,7 +114,7 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Clients endpoints s boljim error handlingom
+// Clients endpoints
 app.get('/api/clients', async (req, res) => {
   try {
     console.log('📋 Getting clients list...');
@@ -191,12 +126,7 @@ app.get('/api/clients', async (req, res) => {
     
   } catch (error) {
     console.error('❌ Get clients error:', error.message);
-    
-    res.status(500).json({ 
-      error: 'Database error',
-      message: error.message,
-      details: 'Check if database is running and tables exist'
-    });
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
@@ -225,29 +155,6 @@ app.post('/api/clients', async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Create client error:', error);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-app.delete('/api/clients/:id', async (req, res) => {
-  const { id } = req.params;
-
-  console.log('🗑️ Deleting client:', id);
-
-  try {
-    const result = await pool.query(
-      'DELETE FROM clients WHERE id = $1 RETURNING *',
-      [id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Client not found' });
-    }
-    
-    console.log('✅ Client deleted:', result.rows[0].name);
-    res.json({ message: 'Client deleted', client: result.rows[0] });
-  } catch (error) {
-    console.error('Delete client error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -283,16 +190,6 @@ app.post('/api/clients/:id/notes', async (req, res) => {
   }
 
   try {
-    // Provjeri da klijent postoji
-    const clientCheck = await pool.query(
-      'SELECT id FROM clients WHERE id = $1',
-      [id]
-    );
-
-    if (clientCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Client not found' });
-    }
-
     const result = await pool.query(
       `INSERT INTO notes (content, client_id) 
        VALUES ($1, $2) 
@@ -308,80 +205,111 @@ app.post('/api/clients/:id/notes', async (req, res) => {
   }
 });
 
-// DELETE endpoint za brisanje bilješki
-app.delete('/api/notes/:id', async (req, res) => {
-  const { id } = req.params;
-
-  console.log('🗑️ Deleting note:', id);
-
+// Stats endpoint
+app.get('/api/clients/stats', async (req, res) => {
   try {
-    const result = await pool.query(
-      'DELETE FROM notes WHERE id = $1 RETURNING *',
-      [id]
+    console.log('📊 Getting stats...');
+    
+    const clientsResult = await pool.query('SELECT COUNT(*) as count FROM clients');
+    const notesResult = await pool.query('SELECT COUNT(*) as count FROM notes');
+    const lastNoteResult = await pool.query(
+      'SELECT content FROM notes ORDER BY created_at DESC LIMIT 1'
     );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Bilješka nije pronađena' });
-    }
-    
-    console.log('✅ Note deleted:', result.rows[0].id);
-    res.json({ 
-      message: 'Bilješka uspješno obrisana', 
-      note: result.rows[0] 
-    });
+
+    const stats = {
+      clients: parseInt(clientsResult.rows[0].count),
+      totalNotes: parseInt(notesResult.rows[0].count),
+      lastNote: lastNoteResult.rows[0]?.content || 'Nema bilježki'
+    };
+
+    console.log('📈 Stats calculated:', stats);
+    res.json(stats);
   } catch (error) {
-    console.error('Delete note error:', error);
-    res.status(500).json({ error: 'Greška pri brisanju bilješke' });
+    console.error('❌ Get stats error:', error);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// Novi endpoint za dobivanje broja bilješki po klijentu
-app.get('/api/clients/notes-count', async (req, res) => {
+// Debug endpoint za provjeru stanja baze
+app.get('/api/debug/database', async (req, res) => {
   try {
-    console.log('📊 Getting notes count per client...');
+    console.log('🔍 Debug database check...');
     
-    const result = await pool.query(`
-      SELECT 
-        c.id as client_id,
-        c.name as client_name,
-        COUNT(n.id) as notes_count
-      FROM clients c
-      LEFT JOIN notes n ON c.id = n.client_id
-      GROUP BY c.id, c.name
-      ORDER BY c.name
+    const client = await pool.connect();
+    
+    const tablesResult = await client.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+      ORDER BY table_name
     `);
 
-    const notesCount = {};
-    result.rows.forEach(row => {
-      notesCount[row.client_id] = {
-        count: parseInt(row.notes_count),
-        name: row.client_name
-      };
-    });
+    const tableCounts = {};
+    
+    for (let table of tablesResult.rows) {
+      const tableName = table.table_name;
+      try {
+        const countResult = await client.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
+        tableCounts[tableName] = parseInt(countResult.rows[0].count);
+      } catch (tableError) {
+        tableCounts[tableName] = -1;
+      }
+    }
 
-    console.log('✅ Notes count per client:', notesCount);
-    res.json(notesCount);
+    client.release();
+
+    const debugInfo = {
+      environment: process.env.NODE_ENV || 'development',
+      tables: tablesResult.rows.map(row => row.table_name),
+      counts: tableCounts,
+      connection: 'successful',
+      timestamp: new Date().toISOString()
+    };
+
+    console.log('📊 Debug info:', debugInfo);
+    res.json(debugInfo);
+
   } catch (error) {
-    console.error('❌ Get notes count error:', error);
-    res.status(500).json({ 
-      error: 'Database error',
-      details: error.message 
+    console.error('❌ Debug database error:', error);
+    res.status(500).json({
+      environment: process.env.NODE_ENV || 'development',
+      error: error.message,
+      connection: 'failed',
+      timestamp: new Date().toISOString()
     });
   }
+});
+
+// **DODAJTE ERROR HANDLING MIDDLEWARE**
+app.use((error, req, res, next) => {
+  console.error('💥 Global error handler:', error);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: error.message 
+  });
+});
+
+// **DODAJTE 404 HANDLER ZA /api RUTE**
+app.use('/api', (req, res) => {
+  res.status(404).json({ 
+    error: 'API endpoint not found',
+    path: req.path,
+    method: req.method
+  });
 });
 
 // Start server
-app.listen(PORT, async () => {
-  console.log(`🚀 Backend server running on http://localhost:${PORT}`);
-  console.log(`📊 PostgreSQL database: crm_demo`);
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`🚀 CRM Backend running on port: ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 API URL: https://staging-5em2ouy-ndb75vqywwrn6.eu-5.platformsh.site/api`);
   console.log(`🔐 Demo login: demo@demo.com / demo123`);
-  console.log(`🐛 Debug endpoint: http://localhost:${PORT}/api/debug/database`);
   
-  // Testiraj konekciju pri pokretanju
+  // Testiraj konekciju
   const dbConnected = await testDatabaseConnection();
-  if (!dbConnected) {
-    console.log('❌ WARNING: Cannot connect to database!');
-    console.log('💡 Check if PostgreSQL container is running: docker-compose ps');
-    console.log('💡 Check database port and credentials');
+  if (dbConnected) {
+    console.log('✅ Database connection established');
+  } else {
+    console.log('❌ Database connection failed - check DATABASE_URL');
   }
 });
