@@ -11,7 +11,7 @@ export default defineConfig({
     host: true, // Dodaj ovo za Upsun
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:8888', // Proxy na backend server
         changeOrigin: true,
         secure: false
       }
