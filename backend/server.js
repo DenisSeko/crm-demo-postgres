@@ -205,27 +205,171 @@ app.post('/api/clients/:id/notes', async (req, res) => {
   }
 });
 
-// Stats endpoint
+// DODAJTE OVE NOVE ENDPOINT-E:
+
+// GET /api/clients/notes-count - broj bilješki po klijentu
+app.get('/api/clients/notes-count', async (req, res) => {
+  try {
+    console.log('📊 Getting notes count per client...');
+    
+    const result = await pool.query(`
+      SELECT 
+        c.id,
+        c.name,
+        COUNT(n.id) as notes_count
+      FROM clients c
+      LEFT JOIN notes n ON c.id = n.client_id
+      GROUP BY c.id, c.name
+      ORDER BY c.name
+    `);
+    
+    console.log(`✅ Found notes count for ${result.rows.length} clients`);
+    
+    const notesCount = result.rows.map(row => ({
+      clientId: row.id,
+      name: row.name,
+      notesCount: parseInt(row.notes_count)
+    }));
+    
+    res.json(notesCount);
+    
+  } catch (error) {
+    console.error('❌ Get notes count error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// GET /api/clients/stats - detaljna statistika klijenata
 app.get('/api/clients/stats', async (req, res) => {
   try {
-    console.log('📊 Getting stats...');
+    console.log('📈 Getting client statistics...');
     
+    // Ukupni broj klijenata
     const clientsResult = await pool.query('SELECT COUNT(*) as count FROM clients');
+    const totalClients = parseInt(clientsResult.rows[0].count);
+    
+    // Klijenti s bilješkama
+    const withNotesResult = await pool.query(`
+      SELECT COUNT(DISTINCT c.id) as count
+      FROM clients c
+      INNER JOIN notes n ON c.id = n.client_id
+    `);
+    const clientsWithNotes = parseInt(withNotesResult.rows[0].count);
+    
+    // Ukupno bilješki
     const notesResult = await pool.query('SELECT COUNT(*) as count FROM notes');
-    const lastNoteResult = await pool.query(
-      'SELECT content FROM notes ORDER BY created_at DESC LIMIT 1'
-    );
-
+    const totalNotes = parseInt(notesResult.rows[0].count);
+    
     const stats = {
-      clients: parseInt(clientsResult.rows[0].count),
-      totalNotes: parseInt(notesResult.rows[0].count),
-      lastNote: lastNoteResult.rows[0]?.content || 'Nema bilježki'
+      totalClients: totalClients,
+      clientsWithNotes: clientsWithNotes,
+      clientsWithoutNotes: totalClients - clientsWithNotes,
+      totalNotes: totalNotes,
+      averageNotesPerClient: totalClients > 0 ? (totalNotes / totalClients).toFixed(2) : 0
     };
-
-    console.log('📈 Stats calculated:', stats);
+    
+    console.log('📊 Stats calculated:', stats);
     res.json(stats);
+    
   } catch (error) {
     console.error('❌ Get stats error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// GET /api/notes - sve bilješke (za fallback)
+app.get('/api/notes', async (req, res) => {
+  try {
+    console.log('📝 Getting all notes...');
+    
+    const result = await pool.query(`
+      SELECT n.*, c.name as client_name 
+      FROM notes n
+      LEFT JOIN clients c ON n.client_id = c.id
+      ORDER BY n.created_at DESC
+    `);
+    
+    console.log(`✅ Found ${result.rows.length} notes`);
+    res.json(result.rows);
+    
+  } catch (error) {
+    console.error('❌ Get notes error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// DELETE /api/clients/:id - brisanje klijenta
+app.delete('/api/clients/:id', async (req, res) => {
+  const { id } = req.params;
+
+  console.log('🗑️ Deleting client:', id);
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM clients WHERE id = $1 RETURNING *',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+    
+    console.log('✅ Client deleted:', result.rows[0].name);
+    res.json({ message: 'Client deleted successfully', client: result.rows[0] });
+  } catch (error) {
+    console.error('❌ Delete client error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// PUT /api/clients/:id - ažuriranje klijenta
+app.put('/api/clients/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, email, company } = req.body;
+
+  console.log('✏️ Updating client:', id);
+
+  try {
+    const result = await pool.query(
+      `UPDATE clients 
+       SET name = $1, email = $2, company = $3 
+       WHERE id = $4 
+       RETURNING *`,
+      [name, email, company, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+    
+    console.log('✅ Client updated:', result.rows[0].name);
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('❌ Update client error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// DELETE /api/notes/:id - brisanje bilješke
+app.delete('/api/notes/:id', async (req, res) => {
+  const { id } = req.params;
+
+  console.log('🗑️ Deleting note:', id);
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM notes WHERE id = $1 RETURNING *',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Note not found' });
+    }
+    
+    console.log('✅ Note deleted');
+    res.json({ message: 'Note deleted successfully', note: result.rows[0] });
+  } catch (error) {
+    console.error('❌ Delete note error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });

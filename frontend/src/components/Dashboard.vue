@@ -4,14 +4,23 @@
       <div class="bg-white p-6 rounded-lg shadow-sm border">
         <h3 class="text-lg font-semibold text-gray-700">Ukupno klijenata</h3>
         <p class="text-3xl font-bold text-blue-600">{{ stats.clients }}</p>
+        <div class="text-xs text-gray-500 mt-1 space-y-1">
+          <div>📝 S bilješkama: {{ getClientsWithNotes() }}</div>
+          <div>📄 Bez bilješki: {{ getClientsWithoutNotes() }}</div>
+        </div>
       </div>
       <div class="bg-white p-6 rounded-lg shadow-sm border">
         <h3 class="text-lg font-semibold text-gray-700">Ukupno bilješki</h3>
-        <p class="text-3xl font-bold text-green-600">{{ stats.totalNotes || 0 }}</p>
+        <p class="text-3xl font-bold text-green-600">{{ stats.totalNotes }}</p>
+        <p class="text-xs text-gray-500 mt-1">
+          Prosjek: {{ getAverageNotes() }} po klijentu
+        </p>
       </div>
       <div class="bg-white p-6 rounded-lg shadow-sm border">
         <h3 class="text-lg font-semibold text-gray-700">Zadnja bilješka</h3>
-        <p class="text-sm text-gray-600 mt-1 truncate">{{ stats.lastNote || 'Nema bilježki' }}</p>
+        <p class="text-sm text-gray-600 mt-1 truncate" :title="stats.lastNote">
+          {{ stats.lastNote }}
+        </p>
       </div>
       <div class="bg-white p-6 rounded-lg shadow-sm border">
         <h3 class="text-lg font-semibold text-gray-700">Akcije</h3>
@@ -61,8 +70,13 @@
       <div class="p-6 border-b">
         <div class="flex justify-between items-center">
           <h3 class="text-lg font-semibold">Klijenti</h3>
-          <div class="text-sm text-gray-600">
-            Ukupno bilješki u sustavu: <span class="font-bold text-green-600">{{ stats.totalNotes }}</span>
+          <div class="text-sm text-gray-600 space-y-1">
+            <div>
+              Ukupno bilješki: <span class="font-bold text-green-600">{{ stats.totalNotes }}</span>
+            </div>
+            <div class="text-xs">
+              Prosjek: <span class="font-semibold">{{ getAverageNotes() }}</span> po klijentu
+            </div>
           </div>
         </div>
       </div>
@@ -92,7 +106,6 @@
               <div class="flex items-center gap-3 mb-2">
                 <h4 class="font-semibold text-lg text-gray-800">{{ client.name }}</h4>
                 
-                <!-- Normalan prikaz broja bilješki -->
                 <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
                   {{ getNoteCountDisplay(client.id) }}
                 </span>
@@ -116,7 +129,6 @@
                 :disabled="loadingNotes[client.id]">
                 <span>{{ notesOpen[client.id] ? '📕' : '📘' }}</span>
                 
-                <!-- Loader na buttonu -->
                 <template v-if="loadingNotes[client.id]">
                   <div class="flex items-center gap-1">
                     <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
@@ -147,7 +159,6 @@
               </span>
             </h5>
 
-            <!-- Loader za bilješke -->
             <div v-if="loadingNotes[client.id]" class="text-center py-4">
               <div class="flex justify-center items-center gap-2 text-gray-500">
                 <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -210,7 +221,7 @@ const clients = ref([])
 const clientNotes = reactive({})
 const notesCount = reactive({})
 const notesOpen = reactive({})
-const loadingNotes = reactive({}) // Loading state za pojedinačne bilješke
+const loadingNotes = reactive({})
 const newNote = reactive({})
 const showNewClient = ref(false)
 const newClient = reactive({
@@ -221,7 +232,7 @@ const newClient = reactive({
 const stats = reactive({
   clients: 0,
   totalNotes: 0,
-  lastNote: ''
+  lastNote: 'Nema bilježki'
 })
 const loading = ref(true)
 const deletingNoteId = ref(null)
@@ -229,32 +240,22 @@ const addingNoteClientId = ref(null)
 const creatingClient = ref(false)
 const deletingClientId = ref(null)
 
-// Nova funkcija koja inicijalizira loader i onda poziva toggleNotes
 const initLoaderAndToggleNotes = async (id) => {
   console.log('🔄 Inicijaliziram loader za klijenta:', id)
   
-  // Inicijaliziraj loader na click event
   loadingNotes[id] = true
-  
-  // Sačekaj da Vue renderira promjenu
   await nextTick()
-  
-  // Dodaj mali delay da se loader sigurno vidi
   await new Promise(resolve => setTimeout(resolve, 300))
-  
-  // Pozovi originalnu funkciju
   await toggleNotes(id)
 }
 
 const toggleNotes = async (id) => {
-  // Ako već postoje podaci, samo toggle-aj bez loadera
   if (clientNotes[id]) {
     notesOpen[id] = !notesOpen[id]
     loadingNotes[id] = false
     return
   }
   
-  // Ako nemamo podatke, učitaj ih
   notesOpen[id] = true
   await loadNotes(id)
 }
@@ -262,15 +263,12 @@ const toggleNotes = async (id) => {
 const loadNotes = async (id) => {
   try {
     console.log('📝 Učitavam bilješke za klijenta:', id)
-    
-    // Dodaj veći delay da se loader jasno vidi
     await new Promise(resolve => setTimeout(resolve, 1000))
     
     const response = await api.get(`/clients/${id}/notes`)
     clientNotes[id] = response.data
     console.log('✅ Bilješke učitane:', clientNotes[id].length)
     
-    // Ažuriraj notesCount
     if (notesCount[id]) {
       notesCount[id].count = clientNotes[id].length
     }
@@ -278,31 +276,24 @@ const loadNotes = async (id) => {
     console.error('Greška pri učitavanju bilješki:', error)
     alert('Greška pri učitavanju bilješki: ' + (error.response?.data?.error || error.message))
   } finally {
-    // Ugasi loader
     loadingNotes[id] = false
   }
 }
 
-// Funkcija za učitavanje broja bilješki po klijentu
 const loadNotesCount = async () => {
   try {
     console.log('📊 Učitavam broj bilješki po klijentu...')
     const response = await api.get('/clients/notes-count')
     
-    // Očisti prethodne podatke
     Object.keys(notesCount).forEach(key => delete notesCount[key])
-    
-    // Postavi nove podatke
     Object.assign(notesCount, response.data)
     console.log('✅ Broj bilješki po klijentu učitano:', notesCount)
   } catch (error) {
     console.error('Greška pri učitavanju broja bilješki:', error)
-    // Fallback: pokušaj ručno izračunati
     calculateNotesCountFallback()
   }
 }
 
-// Fallback funkcija ako endpoint ne radi
 const calculateNotesCountFallback = () => {
   console.log('🔄 Koristim fallback za brojanje bilješki...')
   clients.value.forEach(client => {
@@ -323,15 +314,131 @@ const loadClients = async () => {
     clients.value = response.data
     console.log('✅ Klijenti učitani:', clients.value.length)
     
-    // UČITAJ BROJ BILJEŠKI NAKON KLIJENATA
-    await loadNotesCount()
+    // UČITAJ SVE POTREBNE PODATKE
     await loadStats()
+    await loadNotesCount()
+    await findLastNoteFromData() // OVO JE KLJUČNA PROMJENA
+    
   } catch (error) {
     console.error('Greška pri učitavanju klijenata:', error)
     alert('Greška pri učitavanju klijenata: ' + (error.response?.data?.error || error.message))
   } finally {
     loading.value = false
   }
+}
+
+const loadStats = async () => {
+  try {
+    const response = await api.get('/clients/stats')
+    const serverStats = response.data
+    
+    console.log('📊 Podaci s backenda:', serverStats)
+    
+    const adaptedStats = {
+      clients: serverStats.totalClients || 0,
+      totalNotes: serverStats.totalNotes || 0,
+      lastNote: 'Učitavam...'
+    }
+    
+    Object.assign(stats, adaptedStats)
+    console.log('✅ Statistika adaptirana:', stats)
+    
+  } catch (error) {
+    console.error('Greška pri učitavanju statistike:', error)
+    stats.clients = clients.value.length
+    stats.totalNotes = calculateTotalNotes()
+    stats.lastNote = findLastNoteContent()
+  }
+}
+
+// NOVA FUNKCIJA - ne koristi /notes/latest endpoint
+const findLastNoteFromData = async () => {
+  try {
+    console.log('🔍 Tražim zadnju bilješku iz postojećih podataka...')
+    
+    // Prvo pokušaj pronaći iz već učitane notesCount
+    if (stats.totalNotes > 0) {
+      console.log('📝 Pokušavam učitati sve bilješke za pronalaženje zadnje...')
+      
+      // Pokušaj učitati sve bilješke preko postojećeg endpointa
+      try {
+        const response = await api.get('/notes')
+        if (response.data && response.data.length > 0) {
+          const latestNote = response.data.reduce((latest, note) => {
+            const noteDate = new Date(note.created_at)
+            const latestDate = latest ? new Date(latest.created_at) : null
+            return !latestDate || noteDate > latestDate ? note : latest
+          }, null)
+          
+          if (latestNote) {
+            stats.lastNote = latestNote.content
+            console.log('✅ Zadnja bilješka pronađena:', stats.lastNote)
+            return
+          }
+        }
+      } catch (error) {
+        console.log('ℹ️ Endpoint /notes nije dostupan, pokušavam drugi način...')
+      }
+    }
+    
+    // Ako gornji način ne uspije, pokušaj iz clientNotes
+    const lastNoteFromClientNotes = findLastNoteContent()
+    if (lastNoteFromClientNotes !== 'Nema bilježki') {
+      stats.lastNote = lastNoteFromClientNotes
+      console.log('✅ Zadnja bilješka pronađena iz clientNotes:', stats.lastNote)
+      return
+    }
+    
+    // Ako nema bilješki
+    stats.lastNote = 'Nema bilježki'
+    console.log('ℹ️ Nema bilježki u sustavu')
+    
+  } catch (error) {
+    console.error('Greška pri pronalaženju zadnje bilješke:', error)
+    stats.lastNote = findLastNoteContent()
+  }
+}
+
+const calculateTotalNotes = () => {
+  if (stats.totalNotes > 0) {
+    return stats.totalNotes
+  }
+  
+  let total = 0
+  Object.values(notesCount).forEach(item => {
+    total += item.count || 0
+  })
+  
+  if (total === 0 && clients.value.length > 0) {
+    Object.values(clientNotes).forEach(notes => {
+      if (Array.isArray(notes)) {
+        total += notes.length
+      }
+    })
+  }
+  
+  return total
+}
+
+const findLastNoteContent = () => {
+  let lastNote = null
+  let lastDate = null
+  
+  Object.values(clientNotes).forEach(notes => {
+    if (Array.isArray(notes)) {
+      notes.forEach(note => {
+        if (note && note.created_at) {
+          const noteDate = new Date(note.created_at)
+          if (!lastDate || noteDate > lastDate) {
+            lastDate = noteDate
+            lastNote = note.content
+          }
+        }
+      })
+    }
+  })
+  
+  return lastNote || 'Nema bilježki'
 }
 
 const createClient = async () => {
@@ -373,7 +480,6 @@ const deleteClient = async (id) => {
     console.log('✅ Klijent obrisan')
     
     await loadClients()
-    await loadStats()
   } catch (error) {
     console.error('Greška pri brisanju klijenata:', error)
     alert('Greška pri brisanju klijenata: ' + (error.response?.data?.error || error.message))
@@ -394,12 +500,12 @@ const addNote = async (id) => {
     await api.post(`/clients/${id}/notes`, { content: newNote[id] })
     newNote[id] = ''
     
-    // OSVJEŽI PODATKE
     await loadNotesCount()
     if (notesOpen[id]) {
       await loadNotes(id)
     }
     await loadStats()
+    await findLastNoteFromData()
     console.log('✅ Bilješka dodana')
   } catch (error) {
     console.error('Greška pri dodavanju bilješke:', error)
@@ -418,10 +524,10 @@ const deleteNote = async (noteId, clientId) => {
     
     await api.delete(`/notes/${noteId}`)
     
-    // OSVJEŽI PODATKE
     await loadNotesCount()
     await loadNotes(clientId)
     await loadStats()
+    await findLastNoteFromData()
     console.log('✅ Bilješka obrisana')
   } catch (error) {
     console.error('Greška pri brisanju bilješke:', error)
@@ -436,14 +542,35 @@ const deleteNote = async (noteId, clientId) => {
   }
 }
 
-const loadStats = async () => {
-  try {
-    const response = await api.get('/clients/stats')
-    Object.assign(stats, response.data)
-    console.log('📊 Statistika učitana:', stats)
-  } catch (error) {
-    console.error('Greška pri učitavanju statistike:', error)
-  }
+const getClientsWithNotes = () => {
+  if (clients.value.length === 0) return '0'
+  
+  let count = 0
+  clients.value.forEach(client => {
+    if (getNoteCount(client.id) > 0) {
+      count++
+    }
+  })
+  return count.toString()
+}
+
+const getClientsWithoutNotes = () => {
+  if (clients.value.length === 0) return '0'
+  
+  let count = 0
+  clients.value.forEach(client => {
+    if (getNoteCount(client.id) === 0) {
+      count++
+    }
+  })
+  return count.toString()
+}
+
+const getAverageNotes = () => {
+  if (stats.totalNotes === 0 || stats.clients === 0) return '0.00'
+  
+  const average = stats.totalNotes / stats.clients
+  return average.toFixed(2)
 }
 
 const getNoteCount = (clientId) => {
@@ -453,7 +580,6 @@ const getNoteCount = (clientId) => {
 const getNoteCountDisplay = (clientId) => {
   const count = getNoteCount(clientId)
   
-  // Pravilno sklanjanje za hrvatski jezik
   if (count === 1) {
     return '1 bilješka'
   } else if (count >= 2 && count <= 4) {
@@ -463,7 +589,6 @@ const getNoteCountDisplay = (clientId) => {
   }
 }
 
-// Inicijalizacija pri pokretanju
 onMounted(() => {
   loadClients()
 })
