@@ -24,49 +24,36 @@ applications:
         '/api':
           passthru: true
     
-    hooks:
-      build: |
-        set -e
-        
-        echo "📦 Installing frontend dependencies..."
-        cd frontend
-        
-        # EKSPLICITNO instaliraj sve dependencies (uključujući devDependencies)
-        npm install
-        
-        echo "🔍 Verifying Vite installation..."
-        ./node_modules/.bin/vite --version || (echo "❌ Vite not found" && exit 1)
-        
-        echo "🏗️ Building frontend..."
-        npm run build
-        
-        # Detaljna provjera builda
-        if [ ! -d "dist" ]; then
-          echo "❌ Frontend build failed - no dist directory"
-          echo "📁 Current contents:"
-          ls -la
-          exit 1
-        fi
-        
-        if [ ! -f "dist/index.html" ]; then
-          echo "❌ Frontend build failed - no index.html"
-          echo "📁 dist contents:"
-          ls -la dist/
-          exit 1
-        fi
-        
-        echo "✅ Frontend build successful"
-        echo "📁 Built files:"
-        ls -la dist/
-        
-        echo "📦 Installing backend dependencies..."
-        cd ../backend
-        npm install
-        
-        echo "🗄️ Initializing database with demo data..."
-        npm run init-db
-        
-        echo "🎉 Build completed successfully!"
+  hooks:
+    build: |
+      set -e
+          
+      echo "🚀 Starting build..."
+      
+      # Backend
+      cd backend
+      npm install
+      cd ..
+      
+      # Frontend - samo instaliraj dependencies, npx će handle-ati build
+      cd frontend
+      npm install
+      
+      # npx će automatski pronaći i koristiti Vite
+      echo "🏗️ Building with npx vite..."
+      npx vite build
+      
+      if [ ! -d "dist" ]; then
+        echo "❌ Build failed"
+        exit 1
+      fi
+      
+      echo "✅ Frontend built"
+      
+      cd ../backend
+      npm run init-db
+      
+      echo "🎉 Success!"
     
     mounts:
       'backend/node_modules':
