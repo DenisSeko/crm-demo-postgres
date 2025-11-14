@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 CRM DEMO - PostgreSQL Version - Kompletna instalacija i pokretanje"
+echo "🚀 CRM DEMO - PostgreSQL + Adminer Version - Kompletna instalacija i pokretanje"
 echo "=================================================="
 
 # Provjera Node.js
@@ -172,7 +172,7 @@ import cors from 'cors';
 import { pool } from './database/config.js';
 
 const app = express();
-const PORT = process.env.PORT || 8888; // PROMJENA: Port 8888
+const PORT = process.env.PORT || 8888;
 
 // Database configuration
 app.use(cors({
@@ -516,7 +516,7 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8888', // PROMJENA: Proxy na backend server port 8888
+        target: 'http://localhost:8888',
         changeOrigin: true,
         secure: false
       }
@@ -545,7 +545,7 @@ import axios from 'axios';
 
 // Odredi base URL ovisno o okruženju
 const API_BASE = import.meta.env.MODE === 'development' 
-  ? 'http://localhost:8888/api'  // PROMJENA: Port 8888
+  ? 'http://localhost:8888/api'
   : '/api';
 
 console.log('🔧 API Base URL:', API_BASE);
@@ -591,7 +591,7 @@ cat > frontend/index.html << 'HTML_EOF'
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CRM Demo - PostgreSQL</title>
+    <title>CRM Demo - PostgreSQL + Adminer</title>
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="bg-gray-50 min-h-screen">
@@ -666,7 +666,7 @@ cat > frontend/src/App.vue << 'APP_EOF'
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import api from './services/api' // PROMJENA: import api umjesto axios
+import api from './services/api'
 
 // Components
 import AppHeader from './components/AppHeader.vue'
@@ -701,7 +701,6 @@ const login = async (loginData) => {
     // Button spinner delay
     await new Promise(resolve => setTimeout(resolve, 500))
     
-    // PROMJENA: api umjesto axios i uklonjen /api prefix
     const response = await api.post('/login', loginData)
     const { token, user: userData } = response.data
     
@@ -714,7 +713,7 @@ const login = async (loginData) => {
     localStorage.setItem('token', token)
     localStorage.setItem('user', JSON.stringify(userData))
     user.value = userData
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}` // PROMJENA: api umjesto axios
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`
     
     goToHome()
     
@@ -731,7 +730,7 @@ const logout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
   user.value = null
-  delete api.defaults.headers.common['Authorization'] // PROMJENA: api umjesto axios
+  delete api.defaults.headers.common['Authorization']
   goToHome()
 }
 
@@ -747,7 +746,7 @@ onMounted(() => {
   
   if (savedUser && savedToken) {
     user.value = JSON.parse(savedUser)
-    api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}` // PROMJENA: api umjesto axios
+    api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`
   }
 })
 </script>
@@ -774,7 +773,7 @@ cat > frontend/src/components/AppHeader.vue << 'APPHEADER_EOF'
     <div class="max-w-6xl mx-auto px-4 py-3">
       <h1 class="text-xl font-semibold">
         <a href="#" @click.prevent="$emit('go-home')" class="text-blue-600 hover:text-blue-800">
-          CRM Demo - PostgreSQL (Port 5433)
+          CRM Demo - PostgreSQL + Adminer
         </a>
       </h1>
       <div class="flex justify-between items-center">
@@ -785,7 +784,7 @@ cat > frontend/src/components/AppHeader.vue << 'APPHEADER_EOF'
           </button>
         </div>
         <div class="text-xs text-green-600 font-semibold">
-          🗄️ PostgreSQL (5433)
+          🗄️ PostgreSQL (5433) + 🛠️ Adminer
         </div>
       </div>
     </div>
@@ -810,14 +809,14 @@ cat > frontend/src/components/HomePage.vue << 'HOMEPAGE_EOF'
   <div class="max-w-3xl mx-auto mt-20 p-6 bg-white rounded-lg shadow-md text-center">
     <h2 class="text-3xl font-bold mb-6">Dobrodošli u CRM Demo!</h2>
     <p class="text-gray-700 mb-8">
-      Ovaj demo prikazuje osnovne funkcionalnosti CRM sustava s Vue 3, Node.js i PostgreSQL (port 5433).
+      Ovaj demo prikazuje osnovne funkcionalnosti CRM sustava s Vue 3, Node.js, PostgreSQL na portu 5433 i Adminer za upravljanje bazom.
     </p>
     <button @click="$emit('go-to-login')"
       class="bg-blue-600 text-white py-3 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
       Idi na prijavu
     </button>
     
-    <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+    <div class="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4 text-left">
       <div class="p-4 bg-blue-50 rounded-lg">
         <h3 class="font-semibold text-blue-800">📊 Dashboard</h3>
         <p class="text-sm text-blue-600 mt-2">Pregled klijenata i statistika</p>
@@ -829,6 +828,10 @@ cat > frontend/src/components/HomePage.vue << 'HOMEPAGE_EOF'
       <div class="p-4 bg-purple-50 rounded-lg">
         <h3 class="font-semibold text-purple-800">🗄️ Baza</h3>
         <p class="text-sm text-purple-600 mt-2">PostgreSQL na portu 5433</p>
+      </div>
+      <div class="p-4 bg-orange-50 rounded-lg">
+        <h3 class="font-semibold text-orange-800">🛠️ Adminer</h3>
+        <p class="text-sm text-orange-600 mt-2">Web sučelje za bazu</p>
       </div>
     </div>
   </div>
@@ -1132,7 +1135,7 @@ cat > frontend/src/components/Dashboard.vue << 'DASHBOARD_EOF'
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import api from '../services/api' // PROMJENA: import api umjesto axios
+import api from '../services/api'
 
 const clients = ref([])
 const clientNotes = reactive({})
@@ -1170,7 +1173,7 @@ const loadNotes = async (id) => {
     loadingNotes[id] = true
     console.log('📝 Učitavam bilješke za klijenta:', id)
     
-    const response = await api.get(`/clients/${id}/notes`) // PROMJENA: api umjesto axios
+    const response = await api.get(`/clients/${id}/notes`)
     clientNotes[id] = response.data
     console.log('✅ Bilješke učitane:', clientNotes[id].length)
   } catch (error) {
@@ -1185,7 +1188,7 @@ const loadClients = async () => {
   try {
     loading.value = true
     console.log('📋 Učitavam klijente...')
-    const response = await api.get('/clients') // PROMJENA: api umjesto axios
+    const response = await api.get('/clients')
     clients.value = response.data
     console.log('✅ Klijenti učitani:', clients.value.length)
     
@@ -1207,7 +1210,7 @@ const createClient = async () => {
   try {
     creatingClient.value = true
     console.log('➕ Kreiranje klijenta:', newClient)
-    const response = await api.post('/clients', newClient) // PROMJENA: api umjesto axios
+    const response = await api.post('/clients', newClient)
     console.log('✅ Klijent kreiran:', response.data)
     
     Object.assign(newClient, { name: '', email: '', company: '' })
@@ -1233,7 +1236,7 @@ const deleteClient = async (id) => {
   try {
     deletingClientId.value = id
     console.log('🗑️ Brisanje klijenta:', id)
-    await api.delete(`/clients/${id}`) // PROMJENA: api umjesto axios
+    await api.delete(`/clients/${id}`)
     console.log('✅ Klijent obrisan')
     
     await loadClients()
@@ -1254,7 +1257,7 @@ const addNote = async (id) => {
   try {
     addingNoteClientId.value = id
     console.log('➕ Dodavanje bilješke za klijenta:', id, 'Sadržaj:', newNote[id])
-    await api.post(`/clients/${id}/notes`, { content: newNote[id] }) // PROMJENA: api umjesto axios
+    await api.post(`/clients/${id}/notes`, { content: newNote[id] })
     newNote[id] = ''
     
     // OSVJEŽI PODATKE
@@ -1278,7 +1281,7 @@ const deleteNote = async (noteId, clientId) => {
     deletingNoteId.value = noteId
     console.log('🗑️ Brisanje bilješke:', noteId)
     
-    await api.delete(`/notes/${noteId}`) // PROMJENA: api umjesto axios
+    await api.delete(`/notes/${noteId}`)
     
     // OSVJEŽI PODATKE
     await loadNotes(clientId)
@@ -1299,7 +1302,7 @@ const deleteNote = async (noteId, clientId) => {
 
 const loadStats = async () => {
   try {
-    const response = await api.get('/clients/stats') // PROMJENA: api umjesto axios
+    const response = await api.get('/clients/stats')
     Object.assign(stats, response.data)
     console.log('📊 Statistika učitana:', stats)
   } catch (error) {
@@ -1357,17 +1360,60 @@ volumes:
   postgres_data:
 DOCKER_EOF
 
-# 13. NOVA start.sh skripta - ažurirana za portove 8888 i 5173
+# 13. NOVA start.sh skripta - ažurirana sa Adminer podrškom
 cat > start.sh << 'START_EOF'
 #!/bin/bash
 
-echo "🚀 CRM DEMO - PostgreSQL Version (Port 5433)"
+echo "🚀 CRM DEMO - PostgreSQL + Adminer Version"
 
 # Provjera je li Docker pokrenut
 if ! docker info > /dev/null 2>&1; then
     echo "❌ Docker nije pokrenut. Pokreni Docker prvo."
     exit 1
 fi
+
+# Funkcija za pokretanje Adminera
+start_adminer() {
+    echo "🛠️  Pokrećem Adminer..."
+    
+    # Zaustavi postojeći Adminer ako radi
+    docker stop crm-adminer 2>/dev/null || true
+    docker rm crm-adminer 2>/dev/null || true
+    
+    # Pronađi slobodan port za Adminer
+    ADMINER_PORT=8080
+    while nc -z localhost $ADMINER_PORT 2>/dev/null; do
+        echo "⚠️  Port $ADMINER_PORT zauzet, pokušavam sljedeći..."
+        ADMINER_PORT=$((ADMINER_PORT + 1))
+        if [ $ADMINER_PORT -gt 8100 ]; then
+            echo "❌ Nije moguće pronaći slobodan port za Adminer"
+            return 1
+        fi
+    done
+    
+    # Pokreni Adminer container
+    docker run -d \
+        --name crm-adminer \
+        -p $ADMINER_PORT:8080 \
+        -e ADMINER_DEFAULT_SERVER=host.docker.internal \
+        -e ADMINER_DEFAULT_USERNAME=crm_user \
+        -e ADMINER_DEFAULT_DB=crm_demo \
+        -e ADMINER_DEFAULT_DRIVER=pgsql \
+        --add-host=host.docker.internal:host-gateway \
+        adminer
+    
+    echo "⏳ Čekam Adminer na portu $ADMINER_PORT..."
+    sleep 3
+    
+    if docker ps | grep -q crm-adminer; then
+        echo "✅ Adminer pokrenut na http://localhost:$ADMINER_PORT"
+        export ADMINER_URL="http://localhost:$ADMINER_PORT"
+        return 0
+    else
+        echo "❌ Adminer nije uspješno pokrenut"
+        return 1
+    fi
+}
 
 # Funkcija za pokretanje PostgreSQL
 start_postgres() {
@@ -1496,24 +1542,32 @@ echo "🔄 Pokrećem CRM Demo..."
 echo "=================================================="
 
 start_postgres
+start_adminer
 install_deps
 init_database
 start_services
 
 echo " "
 echo "=================================================="
-echo "🎉 CRM DEMO S POSTGRESQL JE POKRENUT!"
+echo "🎉 CRM DEMO S POSTGRESQL I ADMINEROM JE POKRENUT!"
 echo "=================================================="
 echo "🌐 Frontend: http://localhost:5173"
 echo "🔧 Backend:  http://localhost:8888"
 echo "🗄️  PostgreSQL: localhost:5433"
+echo "🛠️  Adminer: $ADMINER_URL"
 echo " "
-echo "🔐 Demo login: demo@demo.com / demo123"
+echo "🔐 Demo login (aplikacija): demo@demo.com / demo123"
+echo "🔐 Database login (Adminer):"
+echo "   Server: host.docker.internal:5433"
+echo "   Username: crm_user"
+echo "   Password: crm_password"
+echo "   Database: crm_demo"
 echo " "
 echo "📝 Funkcionalnosti:"
 echo "   ✅ Moderni Vue 3 frontend"
 echo "   ✅ Node.js backend API"
 echo "   ✅ PostgreSQL baza podataka (port 5433)"
+echo "   ✅ Adminer za upravljanje bazom"
 echo "   ✅ Upravljanje klijentima (CRUD)"
 echo "   ✅ Bilješke za klijente"
 echo "   ✅ Statistika"
@@ -1528,6 +1582,8 @@ cleanup() {
     echo "🛑 Zaustavljam servise..."
     kill $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
     docker-compose down
+    docker stop crm-adminer 2>/dev/null || true
+    docker rm crm-adminer 2>/dev/null || true
     echo "✅ Zaustavljeno!"
     exit 0
 }
@@ -1542,11 +1598,13 @@ START_EOF
 
 chmod +x start.sh
 
-# 14. Stop skripta
+# 14. Stop skripta - ažurirana za Adminer
 cat > stop.sh << 'STOP_EOF'
 #!/bin/bash
 echo "🛑 Zaustavljam CRM Demo..."
 docker-compose down 2>/dev/null
+docker stop crm-adminer 2>/dev/null || true
+docker rm crm-adminer 2>/dev/null || true
 pkill -f "node.*server.js" 2>/dev/null
 pkill -f "vite" 2>/dev/null
 echo "✅ Sve zaustavljeno!"
@@ -1554,10 +1612,10 @@ STOP_EOF
 
 chmod +x stop.sh
 
-# 15. README
+# 15. README - ažuriran sa Adminer informacijama
 cat > README.md << 'README_EOF'
-# 🚀 CRM Demo - PostgreSQL (Port 5433)
+# 🚀 CRM Demo - PostgreSQL + Adminer (Port 5433)
 
-Kompletan CRM sistem sa Vue 3, Node.js i PostgreSQL na portu 5433.
+Kompletan CRM sistem sa Vue 3, Node.js, PostgreSQL na portu 5433 i Adminer za upravljanje bazom.
 
 ## 🏗️ Struktura Projekta

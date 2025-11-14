@@ -1,12 +1,55 @@
 #!/bin/bash
 
-echo "🚀 CRM DEMO - PostgreSQL Version (Port 5433)"
+echo "🚀 CRM DEMO - PostgreSQL + Adminer Version"
 
 # Provjera je li Docker pokrenut
 if ! docker info > /dev/null 2>&1; then
     echo "❌ Docker nije pokrenut. Pokreni Docker prvo."
     exit 1
 fi
+
+# Funkcija za pokretanje Adminera
+start_adminer() {
+    echo "🛠️  Pokrećem Adminer..."
+    
+    # Zaustavi postojeći Adminer ako radi
+    docker stop crm-adminer 2>/dev/null || true
+    docker rm crm-adminer 2>/dev/null || true
+    
+    # Pronađi slobodan port za Adminer
+    ADMINER_PORT=8080
+    while nc -z localhost $ADMINER_PORT 2>/dev/null; do
+        echo "⚠️  Port $ADMINER_PORT zauzet, pokušavam sljedeći..."
+        ADMINER_PORT=$((ADMINER_PORT + 1))
+        if [ $ADMINER_PORT -gt 8100 ]; then
+            echo "❌ Nije moguće pronaći slobodan port za Adminer"
+            return 1
+        fi
+    done
+    
+    # Pokreni Adminer container
+    docker run -d \
+        --name crm-adminer \
+        -p $ADMINER_PORT:8080 \
+        -e ADMINER_DEFAULT_SERVER=host.docker.internal \
+        -e ADMINER_DEFAULT_USERNAME=crm_user \
+        -e ADMINER_DEFAULT_DB=crm_demo \
+        -e ADMINER_DEFAULT_DRIVER=pgsql \
+        --add-host=host.docker.internal:host-gateway \
+        adminer
+    
+    echo "⏳ Čekam Adminer na portu $ADMINER_PORT..."
+    sleep 3
+    
+    if docker ps | grep -q crm-adminer; then
+        echo "✅ Adminer pokrenut na http://localhost:$ADMINER_PORT"
+        export ADMINER_URL="http://localhost:$ADMINER_PORT"
+        return 0
+    else
+        echo "❌ Adminer nije uspješno pokrenut"
+        return 1
+    fi
+}
 
 # Funkcija za pokretanje PostgreSQL
 start_postgres() {
@@ -210,24 +253,32 @@ echo "🔄 Pokrećem CRM Demo..."
 echo "=================================================="
 
 start_postgres
+start_adminer
 install_deps
 init_database
 start_services
 
 echo " "
 echo "=================================================="
-echo "🎉 CRM DEMO S POSTGRESQL JE POKRENUT!"
+echo "🎉 CRM DEMO S POSTGRESQL I ADMINEROM JE POKRENUT!"
 echo "=================================================="
 echo "🌐 Frontend: http://localhost:5173"
 echo "🔧 Backend:  http://localhost:8888"
 echo "🗄️  PostgreSQL: localhost:5433"
+echo "🛠️  Adminer: $ADMINER_URL"
 echo " "
-echo "🔐 Demo login: demo@demo.com / demo123"
+echo "🔐 Demo login (aplikacija): demo@demo.com / demo123"
+echo "🔐 Database login (Adminer):"
+echo "   Server: host.docker.internal:5433"
+echo "   Username: crm_user"
+echo "   Password: crm_password"
+echo "   Database: crm_demo"
 echo " "
 echo "📝 Funkcionalnosti:"
 echo "   ✅ Moderni Vue 3 frontend"
 echo "   ✅ Node.js backend API"
 echo "   ✅ PostgreSQL baza podataka (port 5433)"
+echo "   ✅ Adminer za upravljanje bazom"
 echo "   ✅ Upravljanje klijentima (CRUD)"
 echo "   ✅ Bilješke za klijente"
 echo "   ✅ Statistika"
@@ -242,6 +293,8 @@ cleanup() {
     echo "🛑 Zaustavljam servise..."
     kill $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
     docker-compose down
+    docker stop crm-adminer 2>/dev/null || true
+    docker rm crm-adminer 2>/dev/null || true
     echo "✅ Zaustavljeno!"
     exit 0
 }
