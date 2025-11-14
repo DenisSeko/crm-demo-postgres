@@ -1,0 +1,57 @@
+# .upsun.yaml - SINGLE APP
+applications:
+  app:
+    type: 'nodejs:20'
+    relationships:
+      database:
+        service: postgresql
+        endpoint: postgresql
+    
+    web:
+      commands:
+        start: "node backend/server.js"
+      locations:
+        '/':
+          root: 'frontend/dist'
+          index: ['index.html']
+          passthru: true
+          expires: -1
+          allow: true
+          scripts: true
+        '/assets':
+          root: 'frontend/dist/assets'
+          expires: 1y
+          allow: true
+        '/api':
+          passthru: true
+    
+    hooks:
+      build: |
+        # Build frontend
+        cd frontend
+        npm ci
+        npm run build
+        
+        # Provjera builda frontenda
+        if [ ! -d "dist" ]; then
+          echo "❌ Frontend build failed - no dist directory"
+          exit 1
+        fi
+        echo "✅ Frontend build successful"
+        
+        # Install backend dependencies
+        cd ../backend
+        npm ci
+        
+        echo "✅ Build completed"
+        echo "📁 Frontend files:"
+        ls -la ../frontend/dist/
+    
+    variables:
+      env:
+        NODE_ENV: 'production'
+        PORT: 8888
+
+services:
+  postgresql:
+    type: postgresql:15

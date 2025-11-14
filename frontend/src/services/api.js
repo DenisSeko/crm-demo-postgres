@@ -19,10 +19,11 @@ const getApiConfig = () => {
     };
   }
 
-  // Za production - koristi relative path
+  // Za Upsun staging/production - koristi relative path
+  // Upsun će servirati API preko /api rute
   return {
     baseURL: '/api',
-    timeout: 10000,
+    timeout: 15000, // Povećaj timeout za produkciju
   };
 };
 
@@ -214,13 +215,20 @@ api.interceptors.response.use(
       authHelper.clearAuth();
       
       // Redirect na login samo ako nismo već na login stranici
-      const currentPath = window.location.pathname + window.location.search;
-      if (!currentPath.includes('login') && !currentPath.includes('auth=login')) {
-        console.log('🔄 Redirecting to login...');
-        setTimeout(() => {
-          window.location.href = '/?auth=login&message=session_expired';
-        }, 1500);
+      if (typeof window !== 'undefined') {
+        const currentPath = window.location.pathname + window.location.search;
+        if (!currentPath.includes('login') && !currentPath.includes('auth=login')) {
+          console.log('🔄 Redirecting to login...');
+          setTimeout(() => {
+            window.location.href = '/?auth=login&message=session_expired';
+          }, 1500);
+        }
       }
+    }
+
+    // Network error - posebno važno za Upsun
+    if (error.code === 'NETWORK_ERROR' || error.message === 'Network Error') {
+      console.error('🌐 Network Error - provjeri internet konekciju ili server status');
     }
 
     // Kreiraj user-friendly poruku
@@ -243,7 +251,11 @@ api.interceptors.response.use(
       ...error,
       userMessage,
       errorCode,
-      originalMessage: message
+      originalMessage: message,
+      // Dodatne informacije za debug
+      isNetworkError: !error.response,
+      isServerError: status >= 500,
+      isClientError: status >= 400 && status < 500
     });
   }
 );
@@ -276,10 +288,40 @@ export const apiUtils = {
   async healthCheck() {
     try {
       const response = await api.get('/health');
-      return response.status === 200;
+      return {
+        status: response.status === 200,
+        data: response.data,
+        timestamp: new Date().toISOString()
+      };
     } catch (error) {
       console.error('❌ Health check failed:', error.message);
-      return false;
+      return {
+        status: false,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  },
+
+  // Test API konekcije - za debug
+  async testConnection() {
+    try {
+      const startTime = Date.now();
+      const response = await api.get('/');
+      const endTime = Date.now();
+      
+      return {
+        success: true,
+        responseTime: endTime - startTime,
+        data: response.data,
+        status: response.status
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        userMessage: error.userMessage
+      };
     }
   }
 };
@@ -294,6 +336,7 @@ export const debugAuth = () => {
   console.log('Token Expired:', authInfo.isTokenExpired);
   console.log('User:', authInfo.user);
   console.log('Token Preview:', authInfo.tokenPreview);
+  console.log('Environment:', typeof window !== 'undefined' ? window.location.hostname : 'Server');
   console.groupEnd();
   return authInfo;
 };
@@ -302,7 +345,20 @@ export const debugAuth = () => {
 if (typeof window !== 'undefined') {
   // Dodaj malu odgodu da se osiguramo da je localStorage dostupan
   setTimeout(() => {
-    authHelper.initializeAuth();
+    const initialized = authHelper.initializeAuth();
+    console.log('🔄 Auth initialization result:', initialized);
+    
+    // Testiraj API konekciju pri pokretanju (samo u developmentu)
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      setTimeout(async () => {
+        try {
+          const connectionTest = await apiUtils.testConnection();
+          console.log('🌐 Initial connection test:', connectionTest);
+        } catch (error) {
+          console.warn('⚠️ Initial connection test failed:', error.message);
+        }
+      }, 2000);
+    }
   }, 100);
 }
 

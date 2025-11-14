@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import cors from 'cors';
 import pkg from 'pg';
 import bcrypt from 'bcrypt';
@@ -6,26 +8,51 @@ import jwt from 'jsonwebtoken';
 
 const { Pool } = pkg;
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 8888;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key_here_change_in_production';
 
-// Database configuration za Docker
+// Database configuration za Upsun
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://crm_user:crm_password@localhost:5433/crm_demo',
+  connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// CORS konfiguracija
+// CORS konfiguracija za Upsun
+const allowedOrigins = [
+  'https://staging-5em2ouy-ndb75vqywwrn6.eu-5.platformsh.site',
+  'https://*.platformsh.site',
+  'http://localhost:5173',
+  'http://localhost:3000'
+];
+
 app.use(cors({
-  origin: [
-    'https://staging-5em2ouy-ndb75vqywwrn6.eu-5.platformsh.site',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.some(allowed => {
+      if (allowed.includes('*')) {
+        return origin.endsWith(allowed.split('*')[1]);
+      }
+      return allowed === origin;
+    })) {
+      return callback(null, true);
+    } else {
+      console.log('CORS blocked for origin:', origin);
+      return callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
+
 app.use(express.json());
+
+// **KLJUČNO ZA UPSUN: Serviranje statičkih fajlova iz frontend dist**
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 // JWT Authentication Middleware
 const authenticateToken = (req, res, next) => {
@@ -79,7 +106,8 @@ app.get('/api', (req, res) => {
     message: 'CRM Backend API is running!',
     environment: process.env.NODE_ENV || 'development',
     database: 'crm_demo',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    platform: 'Upsun'
   });
 });
 
@@ -97,6 +125,7 @@ app.get('/api/health', async (req, res) => {
       status: 'OK', 
       environment: process.env.NODE_ENV || 'development',
       database: 'connected',
+      platform: 'Upsun',
       stats: {
         users: parseInt(usersCount.rows[0].count),
         clients: parseInt(clientsCount.rows[0].count),
@@ -566,7 +595,8 @@ app.get('/api/debug/database', async (req, res) => {
       tables: tablesResult.rows.map(row => row.table_name),
       counts: tableCounts,
       connection: 'successful',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      platform: 'Upsun'
     };
 
     console.log('📊 Debug info:', debugInfo);
@@ -623,13 +653,27 @@ app.use('/api', (req, res) => {
   });
 });
 
+// **KLJUČNO ZA UPSUN: Fallback za Vue Router - OVO MORA BITI ZADNJE**
+app.get('*', (req, res) => {
+  // Ako je API zahtjev, vrati 404
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API route not found' });
+  }
+  
+  // Inače serviraj Vue app
+  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+});
+
 // Start server
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 CRM Backend running on port: ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🏠 Host: 0.0.0.0`);
   console.log(`🗄️ Database: crm_demo (PostgreSQL)`);
   console.log(`🔗 API URL: http://localhost:${PORT}/api`);
   console.log(`🔐 JWT Secret: ${JWT_SECRET === 'your_jwt_secret_key_here_change_in_production' ? 'DEFAULT (change in production!)' : 'CUSTOM'}`);
+  console.log(`📁 Current directory: ${process.cwd()}`);
+  console.log(`📁 Backend directory: ${__dirname}`);
   
   // Testiraj konekciju
   const dbConnected = await testDatabaseConnection();
@@ -637,6 +681,6 @@ app.listen(PORT, '0.0.0.0', async () => {
     console.log('✅ Database connection established');
     console.log('👤 Demo users available after running: npm run init-db');
   } else {
-    console.log('❌ Database connection failed - check Docker and database settings');
+    console.log('❌ Database connection failed - check database settings');
   }
 });
