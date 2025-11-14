@@ -30,25 +30,43 @@ applications:
         
         echo "📦 Installing frontend dependencies..."
         cd frontend
-        npm ci
+        
+        # EKSPLICITNO instaliraj sve dependencies (uključujući devDependencies)
+        npm install
+        
+        echo "🔍 Verifying Vite installation..."
+        ./node_modules/.bin/vite --version || (echo "❌ Vite not found" && exit 1)
         
         echo "🏗️ Building frontend..."
         npm run build
         
+        # Detaljna provjera builda
         if [ ! -d "dist" ]; then
           echo "❌ Frontend build failed - no dist directory"
+          echo "📁 Current contents:"
+          ls -la
           exit 1
         fi
+        
+        if [ ! -f "dist/index.html" ]; then
+          echo "❌ Frontend build failed - no index.html"
+          echo "📁 dist contents:"
+          ls -la dist/
+          exit 1
+        fi
+        
         echo "✅ Frontend build successful"
+        echo "📁 Built files:"
+        ls -la dist/
         
         echo "📦 Installing backend dependencies..."
         cd ../backend
-        npm ci
+        npm install
         
         echo "🗄️ Initializing database with demo data..."
         npm run init-db
         
-        echo "✅ Build completed successfully!"
+        echo "🎉 Build completed successfully!"
     
     mounts:
       'backend/node_modules':
