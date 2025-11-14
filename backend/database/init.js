@@ -3,25 +3,36 @@ import bcrypt from 'bcrypt';
 
 const { Pool } = pkg;
 
-// Database configuration from Docker environment variables
+// Database configuration za Upsun
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://crm_user:crm_password@localhost:5433/crm_demo',
-  ssl: false
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+  max: 10
 });
 
 async function initializeDatabase() {
-  let dbClient; // Promijenio ime varijable da se ne brka sa client objektima
+  let dbClient;
   
   try {
     console.log('🚀 Starting database initialization...');
-    console.log('📊 Database:', process.env.DATABASE_URL || 'postgresql://crm_user:crm_password@localhost:5433/crm_demo');
+    console.log('📊 Environment:', process.env.NODE_ENV || 'development');
     
     dbClient = await pool.connect();
     console.log('✅ Connected to database');
 
+    // Testiraj da li možemo dohvatiti ime baze za debug
+    const dbInfo = await dbClient.query('SELECT current_database() as db_name, version() as version');
+    console.log('🗄️ Database info:', {
+      name: dbInfo.rows[0].db_name,
+      version: dbInfo.rows[0].version.split('\n')[0]
+    });
+
     // Kreiranje tablica ako ne postoje
     console.log('📋 Creating tables if they don\'t exist...');
     
+    // Users tablica
     await dbClient.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -35,7 +46,9 @@ async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    console.log('✅ Users table created/verified');
 
+    // Clients tablica
     await dbClient.query(`
       CREATE TABLE IF NOT EXISTS clients (
         id SERIAL PRIMARY KEY,
@@ -49,7 +62,9 @@ async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    console.log('✅ Clients table created/verified');
 
+    // Notes tablica
     await dbClient.query(`
       CREATE TABLE IF NOT EXISTS notes (
         id SERIAL PRIMARY KEY,
@@ -60,7 +75,9 @@ async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    console.log('✅ Notes table created/verified');
 
+    // Activities tablica
     await dbClient.query(`
       CREATE TABLE IF NOT EXISTS activities (
         id SERIAL PRIMARY KEY,
@@ -72,8 +89,7 @@ async function initializeDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    console.log('✅ Tables created/verified');
+    console.log('✅ Activities table created/verified');
 
     // Ubacivanje demo korisnika
     console.log('👥 Inserting demo users...');
@@ -116,7 +132,7 @@ async function initializeDatabase() {
     for (const user of demoUsers) {
       const passwordHash = await bcrypt.hash(user.password, 10);
       
-      await dbClient.query(`
+      const result = await dbClient.query(`
         INSERT INTO users (username, email, password_hash, first_name, last_name, role) 
         VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (email) DO UPDATE SET
@@ -126,7 +142,12 @@ async function initializeDatabase() {
           last_name = EXCLUDED.last_name,
           role = EXCLUDED.role,
           updated_at = CURRENT_TIMESTAMP
+        RETURNING id, username, email
       `, [user.username, user.email, passwordHash, user.firstName, user.lastName, user.role]);
+      
+      if (result.rows[0]) {
+        console.log(`   ✅ User: ${result.rows[0].email} (${result.rows[0].role})`);
+      }
     }
 
     console.log('✅ Demo users inserted/updated');
@@ -217,8 +238,8 @@ async function initializeDatabase() {
       }
     ];
 
-    for (const clientData of demoClients) { // Promijenio ime varijable
-      await dbClient.query(`
+    for (const clientData of demoClients) {
+      const result = await dbClient.query(`
         INSERT INTO clients (name, email, company, phone, address, created_by) 
         VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (email) DO UPDATE SET
@@ -227,7 +248,12 @@ async function initializeDatabase() {
           phone = EXCLUDED.phone,
           address = EXCLUDED.address,
           updated_at = CURRENT_TIMESTAMP
+        RETURNING id, name, email
       `, [clientData.name, clientData.email, clientData.company, clientData.phone, clientData.address, clientData.createdBy]);
+      
+      if (result.rows[0]) {
+        console.log(`   ✅ Client: ${result.rows[0].name}`);
+      }
     }
 
     console.log('✅ Demo clients inserted/updated');
@@ -253,15 +279,24 @@ async function initializeDatabase() {
       { clientId: 5, content: 'Planiranje treninga za korisnike za sljedeći mjesec.', createdBy: 1 }
     ];
 
+    let notesCount = 0;
     for (const note of demoNotes) {
-      await dbClient.query(`
-        INSERT INTO notes (client_id, content, created_by) 
-        VALUES ($1, $2, $3)
-        ON CONFLICT DO NOTHING
-      `, [note.clientId, note.content, note.createdBy]);
+      try {
+        const result = await dbClient.query(`
+          INSERT INTO notes (client_id, content, created_by) 
+          VALUES ($1, $2, $3)
+          ON CONFLICT DO NOTHING
+          RETURNING id
+        `, [note.clientId, note.content, note.createdBy]);
+        
+        if (result.rows[0]) {
+          notesCount++;
+        }
+      } catch (error) {
+        console.warn(`   ⚠️ Note insertion warning: ${error.message}`);
+      }
     }
-
-    console.log('✅ Demo notes inserted');
+    console.log(`✅ ${notesCount} demo notes inserted`);
 
     // Ubacivanje demo aktivnosti
     console.log('📅 Inserting demo activities...');
@@ -279,39 +314,53 @@ async function initializeDatabase() {
       { clientId: 9, type: 'meeting', description: 'Prezentacija analize podataka', activityDate: '2024-01-24 12:00:00', createdBy: 2 }
     ];
 
+    let activitiesCount = 0;
     for (const activity of demoActivities) {
-      await dbClient.query(`
-        INSERT INTO activities (client_id, type, description, activity_date, created_by) 
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT DO NOTHING
-      `, [activity.clientId, activity.type, activity.description, activity.activityDate, activity.createdBy]);
+      try {
+        const result = await dbClient.query(`
+          INSERT INTO activities (client_id, type, description, activity_date, created_by) 
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT DO NOTHING
+          RETURNING id
+        `, [activity.clientId, activity.type, activity.description, activity.activityDate, activity.createdBy]);
+        
+        if (result.rows[0]) {
+          activitiesCount++;
+        }
+      } catch (error) {
+        console.warn(`   ⚠️ Activity insertion warning: ${error.message}`);
+      }
     }
-
-    console.log('✅ Demo activities inserted');
+    console.log(`✅ ${activitiesCount} demo activities inserted`);
 
     // Kreiranje indeksa
     console.log('📊 Creating indexes...');
     
-    await dbClient.query('CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)');
-    await dbClient.query('CREATE INDEX IF NOT EXISTS idx_notes_client_id ON notes(client_id)');
-    await dbClient.query('CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at)');
-    await dbClient.query('CREATE INDEX IF NOT EXISTS idx_activities_client_id ON activities(client_id)');
-    await dbClient.query('CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(activity_date)');
-    await dbClient.query('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+    const indexes = [
+      'CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)',
+      'CREATE INDEX IF NOT EXISTS idx_notes_client_id ON notes(client_id)',
+      'CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_activities_client_id ON activities(client_id)',
+      'CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(activity_date)',
+      'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)'
+    ];
 
+    for (const indexQuery of indexes) {
+      await dbClient.query(indexQuery);
+    }
     console.log('✅ Indexes created');
 
     // Prikaz statistike
     const usersCount = await dbClient.query('SELECT COUNT(*) FROM users');
     const clientsCount = await dbClient.query('SELECT COUNT(*) FROM clients');
-    const notesCount = await dbClient.query('SELECT COUNT(*) FROM notes');
-    const activitiesCount = await dbClient.query('SELECT COUNT(*) FROM activities');
+    const notesCountResult = await dbClient.query('SELECT COUNT(*) FROM notes');
+    const activitiesCountResult = await dbClient.query('SELECT COUNT(*) FROM activities');
 
     console.log('\n📈 Database Statistics:');
     console.log(`👥 Users: ${usersCount.rows[0].count}`);
     console.log(`🏢 Clients: ${clientsCount.rows[0].count}`);
-    console.log(`📝 Notes: ${notesCount.rows[0].count}`);
-    console.log(`📅 Activities: ${activitiesCount.rows[0].count}`);
+    console.log(`📝 Notes: ${notesCountResult.rows[0].count}`);
+    console.log(`📅 Activities: ${activitiesCountResult.rows[0].count}`);
 
     console.log('\n🎉 Database initialization completed successfully!');
     console.log('\n🔐 Demo login credentials:');
@@ -332,7 +381,11 @@ async function initializeDatabase() {
 }
 
 // Pokretanje inicijalizacije
-initializeDatabase().catch(error => {
-  console.error('💥 Failed to initialize database:', error);
-  process.exit(1);
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  initializeDatabase().catch(error => {
+    console.error('💥 Failed to initialize database:', error);
+    process.exit(1);
+  });
+}
+
+export default initializeDatabase;

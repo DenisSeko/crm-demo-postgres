@@ -1,57 +1,51 @@
--- Kreiranje baze podataka
-CREATE DATABASE IF NOT EXISTS crm_system;
-USE crm_system;
+-- backend/database/schema.sql
+-- CRM Database Schema with Demo Data for PostgreSQL
 
 -- Tablica korisnika za autentikaciju
-CREATE TABLE users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     first_name VARCHAR(50),
     last_name VARCHAR(50),
-    role ENUM('admin', 'user') DEFAULT 'user',
+    role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('admin', 'user')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tablica klijenata
-CREATE TABLE clients (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS clients (
+    id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     company VARCHAR(100),
     phone VARCHAR(20),
     address TEXT,
-    created_by INT,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tablica bilješki
-CREATE TABLE notes (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    client_id INT NOT NULL,
+CREATE TABLE IF NOT EXISTS notes (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
-    created_by INT,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
-    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tablica aktivnosti (dodatna funkcionalnost)
-CREATE TABLE activities (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    client_id INT NOT NULL,
-    type ENUM('call', 'email', 'meeting', 'note', 'other') NOT NULL,
+CREATE TABLE IF NOT EXISTS activities (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    type VARCHAR(20) NOT NULL CHECK (type IN ('call', 'email', 'meeting', 'note', 'other')),
     description TEXT NOT NULL,
     activity_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
-    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Ubacivanje demo korisnika (lozinka je "password123" hashana)
@@ -59,7 +53,8 @@ INSERT INTO users (username, email, password_hash, first_name, last_name, role) 
 ('admin', 'admin@crm.com', '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Admin', 'Korisnik', 'admin'),
 ('ivan.horvat', 'ivan.horvat@primjer.hr', '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Ivan', 'Horvat', 'user'),
 ('ana.kovač', 'ana.kovac@primjer.hr', '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Ana', 'Kovač', 'user'),
-('marko.petrov', 'marko.petrov@primjer.hr', '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Marko', 'Petrov', 'user');
+('marko.petrov', 'marko.petrov@primjer.hr', '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Marko', 'Petrov', 'user')
+ON CONFLICT (email) DO NOTHING;
 
 -- Ubacivanje demo klijenata
 INSERT INTO clients (name, email, company, phone, address, created_by) VALUES
@@ -72,7 +67,8 @@ INSERT INTO clients (name, email, company, phone, address, created_by) VALUES
 ('Marketing Experts', 'contact@marketingexperts.hr', 'Marketing Experts', '+385 1 8901 234', 'Avenija Dubrovnik 15, 10000 Zagreb', 1),
 ('Cloud Services', 'info@cloudservices.hr', 'Cloud Services', '+385 1 9012 345', 'Jadranska avenija 32, 10000 Zagreb', 3),
 ('Data Analytics', 'hello@dataanalytics.hr', 'Data Analytics', '+385 1 0123 456', 'Slavonska avenija 12, 10000 Zagreb', 2),
-('Mobile Dev Team', 'team@mobiledev.hr', 'Mobile Dev Team', '+385 1 1234 567', 'Vrbani 3, 10000 Zagreb', 4);
+('Mobile Dev Team', 'team@mobiledev.hr', 'Mobile Dev Team', '+385 1 1234 567', 'Vrbani 3, 10000 Zagreb', 4)
+ON CONFLICT (email) DO NOTHING;
 
 -- Ubacivanje demo bilješki
 INSERT INTO notes (client_id, content, created_by) VALUES
@@ -106,16 +102,15 @@ INSERT INTO activities (client_id, type, description, activity_date, created_by)
 (9, 'meeting', 'Prezentacija analize podataka', '2024-01-24 12:00:00', 2);
 
 -- Kreiranje indeksa za bolju performansu
-CREATE INDEX idx_clients_email ON clients(email);
-CREATE INDEX idx_notes_client_id ON notes(client_id);
-CREATE INDEX idx_notes_created_at ON notes(created_at);
-CREATE INDEX idx_activities_client_id ON activities(client_id);
-CREATE INDEX idx_activities_date ON activities(activity_date);
-CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
+CREATE INDEX IF NOT EXISTS idx_notes_client_id ON notes(client_id);
+CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at);
+CREATE INDEX IF NOT EXISTS idx_activities_client_id ON activities(client_id);
+CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(activity_date);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- Prikaz broja unosa po tablicama (za provjeru)
-SELECT 
-    'Users' as table_name, COUNT(*) as count FROM users
+SELECT 'Users' as table_name, COUNT(*) as count FROM users
 UNION ALL
 SELECT 'Clients', COUNT(*) FROM clients
 UNION ALL

@@ -18,7 +18,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key_here_change_in
 // Database configuration za Upsun
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+  max: 20
 });
 
 // CORS konfiguracija za Upsun
@@ -31,7 +34,6 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.some(allowed => {
@@ -57,7 +59,7 @@ app.use(express.static(path.join(__dirname, '../frontend/dist')));
 // JWT Authentication Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({ error: 'Access token required' });
@@ -72,25 +74,34 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Test konekcije na bazu
-async function testDatabaseConnection() {
+// Database health check
+async function checkDatabaseSetup() {
   try {
     const client = await pool.connect();
-    console.log('✅ Database connection successful');
     
-    // Testiraj da li postoje tablice
-    const tablesResult = await client.query(`
+    const usersCheck = await client.query('SELECT COUNT(*) as count FROM users');
+    const clientsCheck = await client.query('SELECT COUNT(*) as count FROM clients');
+    const tablesCheck = await client.query(`
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public'
+      AND table_name IN ('users', 'clients', 'notes', 'activities')
     `);
     
-    console.log('📊 Available tables:', tablesResult.rows.map(row => row.table_name));
     client.release();
-    return true;
+    
+    const status = {
+      users: parseInt(usersCheck.rows[0].count),
+      clients: parseInt(clientsCheck.rows[0].count),
+      tables: tablesCheck.rows.map(row => row.table_name),
+      allTablesExist: tablesCheck.rows.length === 4
+    };
+    
+    console.log('📊 Database status:', status);
+    return status;
   } catch (error) {
-    console.error('❌ Database connection failed:', error.message);
-    return false;
+    console.error('❌ Database setup check failed:', error.message);
+    return { error: error.message };
   }
 }
 
@@ -105,7 +116,6 @@ app.get('/api', (req, res) => {
   res.json({ 
     message: 'CRM Backend API is running!',
     environment: process.env.NODE_ENV || 'development',
-    database: 'crm_demo',
     timestamp: new Date().toISOString(),
     platform: 'Upsun'
   });
@@ -116,20 +126,17 @@ app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
     
-    // Dohvati statistiku baze
-    const usersCount = await pool.query('SELECT COUNT(*) as count FROM users');
-    const clientsCount = await pool.query('SELECT COUNT(*) as count FROM clients');
-    const notesCount = await pool.query('SELECT COUNT(*) as count FROM notes');
+    const dbStatus = await checkDatabaseSetup();
     
     res.json({ 
-      status: 'OK', 
+      status: dbStatus.allTablesExist ? 'OK' : 'DEGRADED',
       environment: process.env.NODE_ENV || 'development',
       database: 'connected',
       platform: 'Upsun',
+      tables: dbStatus.tables,
       stats: {
-        users: parseInt(usersCount.rows[0].count),
-        clients: parseInt(clientsCount.rows[0].count),
-        notes: parseInt(notesCount.rows[0].count)
+        users: dbStatus.users || 0,
+        clients: dbStatus.clients || 0
       }
     });
   } catch (error) {
@@ -161,7 +168,6 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Provjeri hashiranu lozinku
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
       console.log('❌ Password mismatch for:', email);
@@ -170,7 +176,6 @@ app.post('/api/auth/login', async (req, res) => {
 
     console.log('✅ Login successful for:', email);
     
-    // Generiraj JWT token
     const token = jwt.sign(
       { 
         id: user.id, 
@@ -204,34 +209,55 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password, firstName, lastName } = req.body;
 
-  console.log('👤 Registration attempt for:', email);
+  console.log('👤 Registration attempt:', { 
+    username, 
+    email, 
+    hasPassword: !!password,
+    firstName, 
+    lastName 
+  });
 
   try {
     if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Username, email and password are required' });
+      console.log('❌ Missing required fields');
+      return res.status(400).json({ 
+        error: 'Username, email and password are required',
+        received: { username: !!username, email: !!email, password: !!password }
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
     // Provjeri postoji li korisnik
+    console.log('🔍 Checking for existing user...');
     const existingUsers = await pool.query(
       'SELECT id FROM users WHERE email = $1 OR username = $2',
       [email, username]
     );
 
+    console.log('📊 Existing users found:', existingUsers.rows.length);
+
     if (existingUsers.rows.length > 0) {
-      return res.status(400).json({ error: 'User already exists' });
+      console.log('❌ User already exists');
+      return res.status(400).json({ error: 'User with this email or username already exists' });
     }
 
     // Hash password
+    console.log('🔒 Hashing password...');
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     // Kreiraj korisnika
+    console.log('💾 Creating user in database...');
     const result = await pool.query(
       'INSERT INTO users (username, email, password_hash, first_name, last_name) VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [username, email, passwordHash, firstName, lastName]
     );
 
     const user = result.rows[0];
+    console.log('✅ User created successfully:', { id: user.id, email: user.email });
     
     // Generiraj token
     const token = jwt.sign(
@@ -245,7 +271,7 @@ app.post('/api/auth/register', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    console.log('✅ User registered successfully:', email);
+    console.log('✅ User registered successfully');
 
     res.status(201).json({
       message: 'User registered successfully',
@@ -261,8 +287,24 @@ app.post('/api/auth/register', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('💥 Registration error:', error);
-    res.status(500).json({ error: 'Database error' });
+    console.error('💥 Registration error:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail
+    });
+    
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'User with this email or username already exists' });
+    }
+    
+    if (error.code === '23502') {
+      return res.status(400).json({ error: 'Required field is missing' });
+    }
+    
+    res.status(500).json({ 
+      error: 'Database error',
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
@@ -288,7 +330,7 @@ app.get('/api/auth/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Clients endpoints - ZAŠTIĆENI S AUTENTIKACIJOM
+// Clients endpoints
 app.get('/api/clients', authenticateToken, async (req, res) => {
   try {
     console.log('📋 Getting clients list...');
@@ -327,7 +369,7 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Create client error:', error);
     
-    if (error.code === '23505') { // Unique violation
+    if (error.code === '23505') {
       return res.status(400).json({ error: 'Client with this email already exists' });
     }
     
@@ -335,7 +377,7 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
   }
 });
 
-// Notes endpoints - ZAŠTIĆENI S AUTENTIKACIJOM
+// Notes endpoints
 app.get('/api/clients/:id/notes', authenticateToken, async (req, res) => {
   const { id } = req.params;
 
@@ -385,7 +427,7 @@ app.post('/api/clients/:id/notes', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/clients/notes-count - broj bilješki po klijentu
+// GET /api/clients/notes-count
 app.get('/api/clients/notes-count', authenticateToken, async (req, res) => {
   try {
     console.log('📊 Getting notes count per client...');
@@ -403,7 +445,6 @@ app.get('/api/clients/notes-count', authenticateToken, async (req, res) => {
     
     console.log(`✅ Found notes count for ${result.rows.length} clients`);
     
-    // Formatiraj odgovor za frontend
     const notesCount = {};
     result.rows.forEach(row => {
       notesCount[row.id] = {
@@ -420,16 +461,14 @@ app.get('/api/clients/notes-count', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/clients/stats - detaljna statistika klijenata
+// GET /api/clients/stats
 app.get('/api/clients/stats', authenticateToken, async (req, res) => {
   try {
     console.log('📈 Getting client statistics...');
     
-    // Ukupni broj klijenata
     const clientsResult = await pool.query('SELECT COUNT(*) as count FROM clients');
     const totalClients = parseInt(clientsResult.rows[0].count);
     
-    // Klijenti s bilješkama
     const withNotesResult = await pool.query(`
       SELECT COUNT(DISTINCT c.id) as count
       FROM clients c
@@ -437,7 +476,6 @@ app.get('/api/clients/stats', authenticateToken, async (req, res) => {
     `);
     const clientsWithNotes = parseInt(withNotesResult.rows[0].count);
     
-    // Ukupno bilješki
     const notesResult = await pool.query('SELECT COUNT(*) as count FROM notes');
     const totalNotes = parseInt(notesResult.rows[0].count);
     
@@ -458,7 +496,7 @@ app.get('/api/clients/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/notes - sve bilješke (za fallback)
+// GET /api/notes
 app.get('/api/notes', authenticateToken, async (req, res) => {
   try {
     console.log('📝 Getting all notes...');
@@ -480,7 +518,7 @@ app.get('/api/notes', authenticateToken, async (req, res) => {
   }
 });
 
-// DELETE /api/clients/:id - brisanje klijenta
+// DELETE /api/clients/:id
 app.delete('/api/clients/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
 
@@ -504,7 +542,7 @@ app.delete('/api/clients/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// PUT /api/clients/:id - ažuriranje klijenta
+// PUT /api/clients/:id
 app.put('/api/clients/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { name, email, company, phone, address } = req.body;
@@ -529,7 +567,7 @@ app.put('/api/clients/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('❌ Update client error:', error);
     
-    if (error.code === '23505') { // Unique violation
+    if (error.code === '23505') {
       return res.status(400).json({ error: 'Client with this email already exists' });
     }
     
@@ -537,7 +575,7 @@ app.put('/api/clients/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// DELETE /api/notes/:id - brisanje bilješke
+// DELETE /api/notes/:id
 app.delete('/api/notes/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
 
@@ -562,9 +600,9 @@ app.delete('/api/notes/:id', authenticateToken, async (req, res) => {
 });
 
 // Debug endpoint za provjeru stanja baze
-app.get('/api/debug/database', async (req, res) => {
+app.get('/api/debug/db-check', async (req, res) => {
   try {
-    console.log('🔍 Debug database check...');
+    console.log('🔍 Database check...');
     
     const client = await pool.connect();
     
@@ -591,7 +629,6 @@ app.get('/api/debug/database', async (req, res) => {
 
     const debugInfo = {
       environment: process.env.NODE_ENV || 'development',
-      database: 'crm_demo',
       tables: tablesResult.rows.map(row => row.table_name),
       counts: tableCounts,
       connection: 'successful',
@@ -606,32 +643,10 @@ app.get('/api/debug/database', async (req, res) => {
     console.error('❌ Debug database error:', error);
     res.status(500).json({
       environment: process.env.NODE_ENV || 'development',
-      database: 'crm_demo',
       error: error.message,
       connection: 'failed',
       timestamp: new Date().toISOString()
     });
-  }
-});
-
-// Populate demo data endpoint
-app.post('/api/debug/populate-demo', async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(403).json({ error: 'Not allowed in production' });
-  }
-
-  try {
-    console.log('🔄 Populating database with demo data...');
-    
-    // Pozovite init.js skriptu ili ovdje dodajte INSERT naredbe
-    res.json({ 
-      message: 'Use the init.js script to populate demo data',
-      command: 'npm run init-db'
-    });
-
-  } catch (error) {
-    console.error('💥 Error populating demo data:', error);
-    res.status(500).json({ error: 'Failed to populate demo data: ' + error.message });
   }
 });
 
@@ -655,12 +670,10 @@ app.use('/api', (req, res) => {
 
 // **KLJUČNO ZA UPSUN: Fallback za Vue Router - OVO MORA BITI ZADNJE**
 app.get('*', (req, res) => {
-  // Ako je API zahtjev, vrati 404
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'API route not found' });
   }
   
-  // Inače serviraj Vue app
   res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
 
@@ -669,18 +682,17 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 CRM Backend running on port: ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🏠 Host: 0.0.0.0`);
-  console.log(`🗄️ Database: crm_demo (PostgreSQL)`);
   console.log(`🔗 API URL: http://localhost:${PORT}/api`);
   console.log(`🔐 JWT Secret: ${JWT_SECRET === 'your_jwt_secret_key_here_change_in_production' ? 'DEFAULT (change in production!)' : 'CUSTOM'}`);
   console.log(`📁 Current directory: ${process.cwd()}`);
   console.log(`📁 Backend directory: ${__dirname}`);
   
-  // Testiraj konekciju
-  const dbConnected = await testDatabaseConnection();
-  if (dbConnected) {
-    console.log('✅ Database connection established');
-    console.log('👤 Demo users available after running: npm run init-db');
+  // Provjeri database setup
+  const dbStatus = await checkDatabaseSetup();
+  if (dbStatus.allTablesExist) {
+    console.log('✅ Database is ready');
+    console.log('👤 Demo users available (see init.js for credentials)');
   } else {
-    console.log('❌ Database connection failed - check database settings');
+    console.warn('⚠️ Database may not be properly initialized');
   }
 });
