@@ -1,135 +1,259 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- Loader -->
-    <Loader v-if="showLoader" />
+    <!-- Global Loader - za login → dashboard prijelaz -->
+    <Loader 
+      v-if="showGlobalLoader" 
+      :message="loaderMessage"
+      :sub-message="loaderSubMessage"
+    />
     
     <!-- Header -->
     <AppHeader 
       :user="user" 
       @go-home="goToHome" 
-      @logout="logout" 
+      @logout="handleLogout" 
     />
 
     <!-- Main Content -->
-    <transition name="fade">
-      <div v-if="!user && !showLoader">
+    <main class="container mx-auto px-4 py-8">
+      <transition name="page-fade" mode="out-in">
+        <!-- Homepage -->
         <HomePage 
-          v-if="showHomepage" 
-          @go-to-login="goToLogin" 
+          v-if="showHomepage && !user && !showGlobalLoader" 
+          @go-to-login="goToLogin"
+          @go-to-register="goToRegister" 
+          key="homepage"
         />
-        <LoginForm 
-          v-else 
-          :is-logging-in="isLoggingIn" 
-          @login="login" 
-          @go-home="goToHome" 
+        
+        <!-- Auth Manager -->
+        <AuthManager 
+          v-else-if="!user && !showGlobalLoader" 
+          :initial-view="authView"
+          @success="handleAuthSuccess"
+          @go-home="goToHome"
+          key="auth"
         />
-      </div>
-    </transition>
 
-    <!-- Dashboard -->
-    <transition name="fade">
-      <Dashboard v-if="user && !showLoader" />
-    </transition>
+        <!-- Dashboard -->
+        <Dashboard 
+          v-else-if="user && !showGlobalLoader" 
+          :user="user"
+          @logout="handleLogout" 
+          key="dashboard"
+        />
+      </transition>
+    </main>
+
+    <!-- Globalna notifikacija -->
+    <div v-if="globalMessage" class="fixed top-4 right-4 z-50 max-w-sm">
+      <div :class="[
+        'p-4 rounded-lg shadow-lg border transform transition-all duration-300',
+        globalMessageType === 'error' 
+          ? 'bg-red-50 border-red-200 text-red-800' 
+          : 'bg-green-50 border-green-200 text-green-800'
+      ]">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center">
+            <span class="text-lg mr-2">
+              {{ globalMessageType === 'error' ? '❌' : '✅' }}
+            </span>
+            <span class="font-medium">{{ globalMessage }}</span>
+          </div>
+          <button 
+            @click="clearGlobalMessage" 
+            class="ml-4 text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import api from './services/api' // PROMJENA: import api umjesto axios
+import { useRouter, useRoute } from 'vue-router'
+import api, { authHelper } from './services/api'
 
 // Components
 import AppHeader from './components/AppHeader.vue'
 import HomePage from './components/HomePage.vue'
-import LoginForm from './components/LoginForm.vue'
+import AuthManager from './components/AuthManager.vue'
 import Loader from './components/Loader.vue'
 import Dashboard from './components/Dashboard.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 // State
 const user = ref(null)
 const showHomepage = ref(true)
-const showLoader = ref(false)
-const isLoggingIn = ref(false)
+const showGlobalLoader = ref(false)
+const authView = ref('login')
+const globalMessage = ref('')
+const globalMessageType = ref('success')
+
+// Loader messages
+const loaderMessage = ref('Učitavanje...')
+const loaderSubMessage = ref('Prijavljujemo vas u sustav')
 
 // Methods
+const showGlobalMessage = (message, type = 'success') => {
+  globalMessage.value = message
+  globalMessageType.value = type
+  setTimeout(() => {
+    clearGlobalMessage()
+  }, 5000)
+}
+
+const clearGlobalMessage = () => {
+  globalMessage.value = ''
+  globalMessageType.value = 'success'
+}
+
 const goToLogin = () => {
   showHomepage.value = false
-  router.push('/?login=true')
+  authView.value = 'login'
+  router.push('/login').catch(() => {}) // PROMJENA: Uklonio query parametar
+}
+
+const goToRegister = () => {
+  showHomepage.value = false
+  authView.value = 'register'
+  router.push('/register').catch(() => {}) // PROMJENA: Uklonio query parametar
 }
 
 const goToHome = () => {
   showHomepage.value = true
-  router.push('/')
+  authView.value = 'login'
+  router.push('/').catch(() => {})
 }
 
-const login = async (loginData) => {
-  isLoggingIn.value = true
+const handleAuthSuccess = async (authData) => {
+  console.log('🔄 Auth success handler pokrenut:', authData)
+  
+  // Postavi loader poruke
+  loaderMessage.value = 'Provjeravam podatke...'
+  loaderSubMessage.value = 'Autenticiram vaš račun'
+  showGlobalLoader.value = true
   
   try {
-    // Button spinner delay
-    await new Promise(resolve => setTimeout(resolve, 500))
+    // Simuliraj provjeru podataka
+    await new Promise(resolve => setTimeout(resolve, 800))
     
-    // PROMJENA: api umjesto axios i uklonjen /api prefix
-    const response = await api.post('/login', loginData)
-    const { token, user: userData } = response.data
+    // Koristimo authHelper za spremanje podataka
+    authHelper.setAuth(authData.token, authData.user)
     
-    // Show main loader
-    showLoader.value = true
+    // Postavi user stanje
+    user.value = authData.user
+    console.log('✅ User postavljen u App.vue:', user.value)
     
-    // Simulate data loading
-    await new Promise(resolve => setTimeout(resolve, 1500))
+    // Ažuriraj loader poruke
+    loaderMessage.value = 'Uspješno prijavljeni!'
+    loaderSubMessage.value = `Dobrodošli, ${authData.user.firstName}!`
     
-    localStorage.setItem('token', token)
-    localStorage.setItem('user', JSON.stringify(userData))
-    user.value = userData
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}` // PROMJENA: api umjesto axios
+    // Prikaži poruku uspjeha
+    showGlobalMessage(`Dobrodošli, ${authData.user.firstName}!`, 'success')
     
-    goToHome()
+    // Simuliraj loading prije prelaska na dashboard
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    
+    console.log('✅ Auth success završeno, prebacujem na dashboard...')
     
   } catch (error) {
-    console.error('Login failed:', error.response?.data || error.message)
-    alert('Pogrešni podaci za prijavu')
+    console.error('Auth success handling error:', error)
+    showGlobalMessage('Greška pri prijavi', 'error')
   } finally {
-    isLoggingIn.value = false
-    showLoader.value = false
+    // Sakrij loader
+    showGlobalLoader.value = false
+    // Reset poruke
+    loaderMessage.value = 'Učitavanje...'
+    loaderSubMessage.value = 'Prijavljujemo vas u sustav'
   }
 }
 
-const logout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
+const handleLogout = () => {
+  authHelper.clearAuth()
   user.value = null
-  delete api.defaults.headers.common['Authorization'] // PROMJENA: api umjesto axios
+  showGlobalMessage('Uspješno ste se odjavili', 'success')
+  console.log('✅ User logged out')
+  
   goToHome()
 }
 
-// Watchers & Lifecycle
-watch(() => router.currentRoute.value.query, (newQuery) => {
-  showHomepage.value = newQuery.login !== 'true'
-}, { immediate: true })
-
-onMounted(() => {
-  // Check for saved user session
-  const savedUser = localStorage.getItem('user')
-  const savedToken = localStorage.getItem('token')
+// Check authentication status on app start
+const checkAuthStatus = () => {
+  console.log('🔍 Provjeram auth status...')
   
-  if (savedUser && savedToken) {
-    user.value = JSON.parse(savedUser)
-    api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}` // PROMJENA: api umjesto axios
+  if (authHelper.isAuthenticated()) {
+    const storedUser = authHelper.getUser()
+    user.value = storedUser
+    console.log('✅ User restored from localStorage:', user.value)
+    showGlobalMessage(`Dobrodošli natrag, ${storedUser.firstName}!`, 'success')
+  } else {
+    user.value = null
+    console.log('ℹ️ Nema validnog auth tokena')
   }
+}
+
+// Watchers - PROMJENA: Uklonio query watcher jer sada koristimo direktne rute
+watch(
+  () => route.path,
+  (newPath) => {
+    console.log('📍 Route changed:', newPath)
+    if (newPath === '/login') {
+      showHomepage.value = false
+      authView.value = 'login'
+    } else if (newPath === '/register') {
+      showHomepage.value = false
+      authView.value = 'register'
+    } else if (newPath === '/') {
+      showHomepage.value = true
+      authView.value = 'login'
+    }
+  },
+  { immediate: true }
+)
+
+// Lifecycle
+onMounted(() => {
+  console.log('🚀 App.vue mounted')
+  checkAuthStatus()
+  
+  // Listen for storage changes (logout from other tabs)
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'authToken' && !event.newValue) {
+      console.log('🔐 Storage changed - logging out')
+      handleLogout()
+    }
+  })
+})
+
+// Cleanup
+import { onUnmounted } from 'vue'
+onUnmounted(() => {
+  window.removeEventListener('storage', handleLogout)
 })
 </script>
 
-<style>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.5s ease;
+<style scoped>
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity 0.4s ease, transform 0.4s ease;
 }
 
-.fade-enter-from,
-.fade-leave-to {
+.page-fade-enter-from {
   opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+.container {
+  max-width: 1200px;
 }
 </style>
