@@ -1,4 +1,4 @@
-# .upsun.yaml - SINGLE APP
+# .upsun/config.yaml
 applications:
   app:
     type: "nodejs:20"
@@ -15,71 +15,21 @@ applications:
           root: "frontend/dist"
           index: ["index.html"]
           passthru: true
-          expires: -1
-          allow: true
-          scripts: true
         "/assets":
           root: "frontend/dist/assets"
           expires: 1y
-          allow: true
         "/api":
           passthru: true
 
-hooks:
-  build: |
-    set -e
-        
-    echo "🚀 Starting alternative build process..."
+    hooks:
+      build: |
+        cd frontend && npm install && npx vite build
+        cd ../backend && npm install && npm run init-db
 
-    # Prvo backend da ne blokiramo
-    echo "📦 Backend setup..."
-    cd backend
-    npm install
-    cd ..
-
-    # Frontend sa eksplicitnim pokretanjem
-    echo "📦 Frontend setup..."
-    cd frontend
-
-    # Clean install
-    rm -rf node_modules
-    npm install
-
-    # Probaj različite načine buildanja
-    echo "🔄 Trying different build methods..."
-
-    # Metoda 1: npx (najbolja)
-    npx vite build || {
-      echo "❌ npx vite build failed, trying alternative..."
-      
-      # Metoda 2: direktno s node
-      node node_modules/vite/bin/vite.js build || {
-        echo "❌ node vite build failed, trying global install..."
-        
-        # Metoda 3: globalni Vite
-        npm install -g vite
-        vite build
-      }
-    }
-
-    # Konačna provjera
-    if [ ! -f "dist/index.html" ]; then
-      echo "❌ All build methods failed"
-      exit 1
-    fi
-
-    echo "✅ Frontend build successful"
-
-    # Završi s bazom
-    cd ../backend
-    npm run init-db
-
-    echo "🎉 Build completed!"
-
-variables:
-  env:
-    NODE_ENV: "production"
-    PORT: 8888
+    variables:
+      env:
+        NODE_ENV: "production"
+        PORT: 8888
 
 services:
   postgresql:
