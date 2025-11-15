@@ -1,4 +1,4 @@
-# .upsun/config.yaml - Stavi ovu datoteku u .upsun folder!
+# .upsun/config.yaml
 
 applications:
   app:
@@ -37,46 +37,50 @@ applications:
         echo "📦 Building frontend..."
         cd frontend
         
-        # Instaliraj SVE dependencies UKLJUČUJUĆI devDependencies
-        echo "📥 Installing ALL dependencies (including dev)..."
-        npm install --include=dev
+        # Instaliraj dependencies - NE POKUŠAVAJ brisati node_modules!
+        echo "📥 Installing frontend dependencies..."
+        npm install
         
-        # Verifikacija
-        echo "🔍 Verifying Vite installation..."
-        npm list vite
-        npm list @vitejs/plugin-vue
+        # Verifikacija build alata
+        echo "🔍 Build tools verification:"
+        if [ -f "node_modules/.bin/vite" ]; then
+          echo "✅ Vite found in node_modules/.bin"
+        else
+          echo "❌ Vite not found in .bin, checking alternatives..."
+          # Probaj pronaći Vite na drugi način
+          find node_modules -name "vite.js" -type f | head -5 || echo "No vite.js found"
+        fi
         
         # Build
         echo "🏗️ Running Vite build..."
         npm run build
         
-        # Provjera da li je build uspio
+        # Provjera builda
         if [ ! -f "dist/index.html" ]; then
-          echo "❌ Build failed - dist/index.html not found"
-          ls -la dist/ || echo "dist/ directory doesn't exist"
+          echo "❌ Frontend build failed - no dist/index.html"
+          echo "📁 Current directory contents:"
+          ls -la
+          echo "📁 If dist exists:"
+          [ -d "dist" ] && ls -la dist/ || echo "dist/ directory doesn't exist"
           exit 1
         fi
         
         echo "✅ Frontend build successful"
+        echo "📁 Built files:"
         ls -la dist/
         
         # BACKEND
         echo "📦 Installing backend dependencies..."
         cd ../backend
-        npm install --production
+        npm install
         
         echo "🎉 Build completed!"
       
       deploy: |
-        echo "🚀 Deploying application..."
-        cd backend
-        # Run migrations if needed
-        # npm run migrate
-
-    mounts:
-      "/backend/uploads":
-        source: local
-        source_path: uploads
+        echo "🚀 Application deployed successfully"
+        echo "📊 Frontend served from: frontend/dist"
+        echo "🔧 Backend running on port: ${PORT}"
+        echo "🗄️ Database: PostgreSQL"
 
     variables:
       env:
