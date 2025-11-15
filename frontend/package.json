@@ -1,96 +1,22 @@
-applications:
-  app:
-    type: "nodejs:20"
-    
-    relationships:
-      database:
-        service: postgresql
-        endpoint: postgresql
-
-    web:
-      commands:
-        start: "node backend/server.js"
-      locations:
-        "/":
-          root: "frontend/dist"
-          index: ["index.html"]
-          passthru: true
-          expires: -1
-          allow: true
-          scripts: true
-        "/assets":
-          root: "frontend/dist/assets"
-          expires: 1y
-          allow: true
-        "/api":
-          passthru: true
-
-    hooks:
-      build: |
-        set -e
-        
-        echo "🚀 Starting build process..."
-        
-        # FRONTEND BUILD
-        echo "📦 Building frontend..."
-        cd frontend
-        
-        # Instaliraj SVE dependencies UKLJUČUJUĆI devDependencies
-        echo "📥 Installing ALL dependencies (including dev)..."
-        npm install --include=dev
-        
-        # Verifikacija
-        echo "🔍 Verifying Vite installation..."
-        npm list vite
-        npm list @vitejs/plugin-vue
-        
-        # Build
-        echo "🏗️ Running Vite build..."
-        npm run build
-        
-        # Provjera da li je build uspio
-        if [ ! -f "dist/index.html" ]; then
-          echo "❌ Build failed - dist/index.html not found"
-          ls -la dist/ || echo "dist/ directory doesn't exist"
-          exit 1
-        fi
-        
-        echo "✅ Frontend build successful"
-        ls -la dist/
-        
-        # BACKEND
-        echo "📦 Installing backend dependencies..."
-        cd ../backend
-        npm install --production
-        
-        echo "🎉 Build completed!"
-      
-      deploy: |
-        echo "🚀 Deploying application..."
-        cd backend
-        # Run migrations if needed
-        # npm run migrate
-
-    mounts:
-      "/backend/uploads":
-        source: local
-        source_path: uploads
-
-    variables:
-      env:
-        NODE_ENV: "production"
-        PORT: 8888
-        JWT_SECRET: "your-very-secure-jwt-secret-key-change-this-in-production"
-
-services:
-  postgresql:
-    type: postgresql:15
-    disk: 1024
-
-routes:
-  "https://{default}/":
-    type: upstream
-    upstream: "app:http"
-  "https://www.{default}/":
-    type: redirect
-    to: "https://{default}/"
+{
+  "name": "crm-frontend",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 3000 --host 0.0.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.5.0",
+    "pinia": "^2.1.0",
+    "vue": "^3.3.0",
+    "vue-router": "^4.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.3.0",
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.18",
+    "vite": "^4.4.0"
+  }
+}

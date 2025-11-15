@@ -1,6 +1,9 @@
+# .upsun/config.yaml - Stavi ovu datoteku u .upsun folder!
+
 applications:
   app:
     type: "nodejs:20"
+    
     relationships:
       database:
         service: postgresql
@@ -34,50 +37,46 @@ applications:
         echo "📦 Building frontend..."
         cd frontend
         
-        # Clean install bez production flag
-        echo "📥 Installing dependencies..."
-        npm install
+        # Instaliraj SVE dependencies UKLJUČUJUĆI devDependencies
+        echo "📥 Installing ALL dependencies (including dev)..."
+        npm install --include=dev
         
-        # Detaljna verifikacija
-        echo "🔍 Detailed package verification:"
-        ls -la node_modules/ | head -20
-        npm list vite || echo "Vite not listed but continuing..."
-        npm list @vitejs/plugin-vue || echo "Plugin not listed but continuing..."
-        
-        # Provjeri da li Vite binary postoji
-        echo "🔍 Checking for Vite binary..."
-        if [ -f "node_modules/.bin/vite" ]; then
-          echo "✅ Vite binary found"
-          ./node_modules/.bin/vite --version || echo "Vite version check failed but continuing..."
-        else
-          echo "❌ Vite binary not found, listing .bin:"
-          ls -la node_modules/.bin/ | head -10
-        fi
+        # Verifikacija
+        echo "🔍 Verifying Vite installation..."
+        npm list vite
+        npm list @vitejs/plugin-vue
         
         # Build
-        echo "🏗️ Running build..."
+        echo "🏗️ Running Vite build..."
         npm run build
         
+        # Provjera da li je build uspio
         if [ ! -f "dist/index.html" ]; then
-          echo "❌ Build failed, checking structure..."
-          ls -la
-          if [ -d "node_modules/vite" ]; then
-            echo "📁 Vite directory exists, trying direct build..."
-            node node_modules/vite/bin/vite.js build
-          else
-            echo "❌ Vite not installed at all"
-            exit 1
-          fi
+          echo "❌ Build failed - dist/index.html not found"
+          ls -la dist/ || echo "dist/ directory doesn't exist"
+          exit 1
         fi
         
         echo "✅ Frontend build successful"
+        ls -la dist/
         
         # BACKEND
-        echo "📦 Backend setup..."
+        echo "📦 Installing backend dependencies..."
         cd ../backend
-        npm install
+        npm install --production
         
         echo "🎉 Build completed!"
+      
+      deploy: |
+        echo "🚀 Deploying application..."
+        cd backend
+        # Run migrations if needed
+        # npm run migrate
+
+    mounts:
+      "/backend/uploads":
+        source: local
+        source_path: uploads
 
     variables:
       env:
@@ -88,3 +87,12 @@ applications:
 services:
   postgresql:
     type: postgresql:15
+    disk: 1024
+
+routes:
+  "https://{default}/":
+    type: upstream
+    upstream: "app:http"
+  "https://www.{default}/":
+    type: redirect
+    to: "https://{default}/"
