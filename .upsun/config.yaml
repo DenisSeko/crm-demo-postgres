@@ -34,49 +34,50 @@ applications:
         echo "📦 Building frontend..."
         cd frontend
         
-        # EKSPLICITNO instaliraj SVE dependencies (uključujući devDependencies)
-        echo "📥 Installing all dependencies including devDependencies..."
-        npm install --production=false
+        # Clean install bez production flag
+        echo "📥 Installing dependencies..."
+        npm install
         
-        # Verifikacija da su build alati instalirani
-        echo "🔍 Build tools verification:"
-        npm list vite @vitejs/plugin-vue --depth=0
+        # Detaljna verifikacija
+        echo "🔍 Detailed package verification:"
+        ls -la node_modules/ | head -20
+        npm list vite || echo "Vite not listed but continuing..."
+        npm list @vitejs/plugin-vue || echo "Plugin not listed but continuing..."
         
-        # Provjeri da li Vite postoji
+        # Provjeri da li Vite binary postoji
+        echo "🔍 Checking for Vite binary..."
         if [ -f "node_modules/.bin/vite" ]; then
-          echo "✅ Vite found in node_modules/.bin"
-          ./node_modules/.bin/vite --version
+          echo "✅ Vite binary found"
+          ./node_modules/.bin/vite --version || echo "Vite version check failed but continuing..."
         else
-          echo "❌ Vite not found in .bin, checking node_modules..."
-          ls -la node_modules/ | grep vite || echo "No vite directory found"
+          echo "❌ Vite binary not found, listing .bin:"
+          ls -la node_modules/.bin/ | head -10
         fi
         
-        # Build sa npm run build (koristi script iz package.json)
-        echo "🏗️ Running npm run build..."
+        # Build
+        echo "🏗️ Running build..."
         npm run build
         
-        # Provjera builda
         if [ ! -f "dist/index.html" ]; then
-          echo "❌ Frontend build failed"
-          echo "📁 Current directory contents:"
+          echo "❌ Build failed, checking structure..."
           ls -la
-          echo "📁 If dist exists:"
-          if [ -d "dist" ]; then
-            ls -la dist/
+          if [ -d "node_modules/vite" ]; then
+            echo "📁 Vite directory exists, trying direct build..."
+            node node_modules/vite/bin/vite.js build
+          else
+            echo "❌ Vite not installed at all"
+            exit 1
           fi
-          exit 1
         fi
         
         echo "✅ Frontend build successful"
-        echo "📁 Built files:"
-        ls -la dist/
         
-        # BACKEND SETUP
-        echo "📦 Setting up backend..."
+        # BACKEND
+        echo "📦 Backend setup..."
         cd ../backend
         npm install
         
-        echo "🎉 Build completed! Database will auto-initialize on startup."
+        echo "🎉 Build completed!"
 
     variables:
       env:
