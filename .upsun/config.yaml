@@ -37,50 +37,71 @@ applications:
         echo "📦 Building frontend..."
         cd frontend
         
-        # Instaliraj dependencies - NE POKUŠAVAJ brisati node_modules!
-        echo "📥 Installing frontend dependencies..."
+        # KLJUČNO: Postavi NODE_ENV na development za install
+        export NODE_ENV=development
+        
+        echo "📥 Installing ALL dependencies (dev + production)..."
         npm install
         
-        # Verifikacija build alata
-        echo "🔍 Build tools verification:"
-        if [ -f "node_modules/.bin/vite" ]; then
-          echo "✅ Vite found in node_modules/.bin"
-        else
-          echo "❌ Vite not found in .bin, checking alternatives..."
-          # Probaj pronaći Vite na drugi način
-          find node_modules -name "vite.js" -type f | head -5 || echo "No vite.js found"
+        # Verifikacija instalacije
+        echo "🔍 Verifying installations..."
+        echo "Installed packages:"
+        npm list --depth=0
+        
+        echo ""
+        echo "Checking Vite specifically:"
+        npm list vite || echo "WARNING: Vite not in npm list"
+        
+        echo ""
+        echo "Checking .bin folder:"
+        ls -la node_modules/.bin/ | grep vite || echo "WARNING: No vite in .bin"
+        
+        # Ako Vite nije u .bin, pokušaj direktni path
+        if [ ! -f "node_modules/.bin/vite" ]; then
+          echo "⚠️  Vite binary not found, trying direct node_modules path..."
+          if [ -f "node_modules/vite/bin/vite.js" ]; then
+            echo "✅ Found vite.js, creating symlink..."
+            ln -sf "$(pwd)/node_modules/vite/bin/vite.js" node_modules/.bin/vite
+            chmod +x node_modules/.bin/vite
+          fi
         fi
         
-        # Build
+        # Build sa production env
+        export NODE_ENV=production
         echo "🏗️ Running Vite build..."
         npm run build
         
-        # Provjera builda
+        # Provjera
         if [ ! -f "dist/index.html" ]; then
-          echo "❌ Frontend build failed - no dist/index.html"
-          echo "📁 Current directory contents:"
+          echo "❌ Build failed - dist/index.html not found"
+          echo "Directory contents:"
           ls -la
-          echo "📁 If dist exists:"
-          [ -d "dist" ] && ls -la dist/ || echo "dist/ directory doesn't exist"
           exit 1
         fi
         
-        echo "✅ Frontend build successful"
-        echo "📁 Built files:"
+        echo "✅ Frontend build successful!"
+        echo "Built files:"
         ls -la dist/
         
         # BACKEND
+        echo ""
         echo "📦 Installing backend dependencies..."
         cd ../backend
-        npm install
+        export NODE_ENV=production
+        npm install --omit=dev
         
-        echo "🎉 Build completed!"
+        echo "🎉 Build completed successfully!"
       
       deploy: |
         echo "🚀 Application deployed successfully"
         echo "📊 Frontend served from: frontend/dist"
         echo "🔧 Backend running on port: ${PORT}"
         echo "🗄️ Database: PostgreSQL"
+
+    mounts:
+      "/backend/uploads":
+        source: local
+        source_path: uploads
 
     variables:
       env:
