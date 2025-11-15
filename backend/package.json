@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "db:init": "node database/init.js"
+    "init-db": "node database/init.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
