@@ -34,13 +34,31 @@ applications:
         # FRONTEND BUILD
         echo "📦 Building frontend..."
         cd frontend
-        npm install
-        npx vite build
         
+        # Instaliraj dependencies
+        npm install
+        
+        # Verifikacija da su build alati instalirani
+        echo "🔍 Verifying build tools..."
+        if [ -f "node_modules/.bin/vite" ]; then
+          echo "✅ Vite found locally"
+          ./node_modules/.bin/vite build
+        else
+          echo "❌ Vite not found, trying alternative methods..."
+          # Probaj s node direktno
+          node node_modules/vite/bin/vite.js build
+        fi
+        
+        # Provjera builda
         if [ ! -f "dist/index.html" ]; then
           echo "❌ Frontend build failed"
+          echo "📁 Current contents:"
+          ls -la
+          echo "📁 node_modules/.bin contents:"
+          ls -la node_modules/.bin/ | head -10
           exit 1
         fi
+        
         echo "✅ Frontend build successful"
         
         # BACKEND SETUP
