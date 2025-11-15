@@ -1,4 +1,3 @@
-# .upsun/config.yaml
 applications:
   app:
     type: "nodejs:20"
@@ -35,31 +34,42 @@ applications:
         echo "📦 Building frontend..."
         cd frontend
         
-        # Instaliraj dependencies
-        npm install
+        # EKSPLICITNO instaliraj SVE dependencies (uključujući devDependencies)
+        echo "📥 Installing all dependencies including devDependencies..."
+        npm install --production=false
         
         # Verifikacija da su build alati instalirani
-        echo "🔍 Verifying build tools..."
+        echo "🔍 Build tools verification:"
+        npm list vite @vitejs/plugin-vue --depth=0
+        
+        # Provjeri da li Vite postoji
         if [ -f "node_modules/.bin/vite" ]; then
-          echo "✅ Vite found locally"
-          ./node_modules/.bin/vite build
+          echo "✅ Vite found in node_modules/.bin"
+          ./node_modules/.bin/vite --version
         else
-          echo "❌ Vite not found, trying alternative methods..."
-          # Probaj s node direktno
-          node node_modules/vite/bin/vite.js build
+          echo "❌ Vite not found in .bin, checking node_modules..."
+          ls -la node_modules/ | grep vite || echo "No vite directory found"
         fi
+        
+        # Build sa npm run build (koristi script iz package.json)
+        echo "🏗️ Running npm run build..."
+        npm run build
         
         # Provjera builda
         if [ ! -f "dist/index.html" ]; then
           echo "❌ Frontend build failed"
-          echo "📁 Current contents:"
+          echo "📁 Current directory contents:"
           ls -la
-          echo "📁 node_modules/.bin contents:"
-          ls -la node_modules/.bin/ | head -10
+          echo "📁 If dist exists:"
+          if [ -d "dist" ]; then
+            ls -la dist/
+          fi
           exit 1
         fi
         
         echo "✅ Frontend build successful"
+        echo "📁 Built files:"
+        ls -la dist/
         
         # BACKEND SETUP
         echo "📦 Setting up backend..."
