@@ -3,7 +3,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
 import pkg from 'pg';
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
 const { Pool } = pkg;
@@ -56,6 +55,60 @@ app.use(express.json());
 // **KLJUČNO ZA UPSUN: Serviranje statičkih fajlova iz frontend dist**
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
+// Database auto-initialization function
+async function initializeDatabaseOnStartup() {
+  let client;
+  try {
+    console.log('🔍 Checking database setup...');
+    
+    client = await pool.connect();
+    
+    // Provjeri da li users tablica postoji
+    const result = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'users'
+      );
+    `);
+    
+    const usersTableExists = result.rows[0].exists;
+    
+    if (!usersTableExists) {
+      console.log('🗄️ Database not initialized. Running initialization...');
+      
+      // Uvezi i pokreni init.js
+      const { default: initializeDatabase } = await import('./database/init.js');
+      await initializeDatabase();
+      
+      console.log('✅ Database initialized successfully');
+    } else {
+      console.log('✅ Database already initialized');
+      
+      // Prikaz osnovne statistike
+      const usersCount = await client.query('SELECT COUNT(*) FROM users');
+      const clientsCount = await client.query('SELECT COUNT(*) FROM clients');
+      const notesCount = await client.query('SELECT COUNT(*) FROM notes');
+      const activitiesCount = await client.query('SELECT COUNT(*) FROM activities');
+      
+      console.log('📊 Database statistics:');
+      console.log(`   👥 Users: ${usersCount.rows[0].count}`);
+      console.log(`   🏢 Clients: ${clientsCount.rows[0].count}`);
+      console.log(`   📝 Notes: ${notesCount.rows[0].count}`);
+      console.log(`   📅 Activities: ${activitiesCount.rows[0].count}`);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error.message);
+    return false;
+  } finally {
+    if (client) {
+      client.release();
+    }
+  }
+}
+
 // JWT Authentication Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -73,37 +126,6 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
-
-// Database health check
-async function checkDatabaseSetup() {
-  try {
-    const client = await pool.connect();
-    
-    const usersCheck = await client.query('SELECT COUNT(*) as count FROM users');
-    const clientsCheck = await client.query('SELECT COUNT(*) as count FROM clients');
-    const tablesCheck = await client.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
-      AND table_name IN ('users', 'clients', 'notes', 'activities')
-    `);
-    
-    client.release();
-    
-    const status = {
-      users: parseInt(usersCheck.rows[0].count),
-      clients: parseInt(clientsCheck.rows[0].count),
-      tables: tablesCheck.rows.map(row => row.table_name),
-      allTablesExist: tablesCheck.rows.length === 4
-    };
-    
-    console.log('📊 Database status:', status);
-    return status;
-  } catch (error) {
-    console.error('❌ Database setup check failed:', error.message);
-    return { error: error.message };
-  }
-}
 
 // **MIDDLEWARE ZA /api RUTE**
 app.use('/api', (req, res, next) => {
@@ -126,17 +148,21 @@ app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
     
-    const dbStatus = await checkDatabaseSetup();
+    const usersCount = await pool.query('SELECT COUNT(*) as count FROM users');
+    const clientsCount = await pool.query('SELECT COUNT(*) as count FROM clients');
+    const notesCount = await pool.query('SELECT COUNT(*) as count FROM notes');
+    const activitiesCount = await pool.query('SELECT COUNT(*) as count FROM activities');
     
     res.json({ 
-      status: dbStatus.allTablesExist ? 'OK' : 'DEGRADED',
+      status: 'OK', 
       environment: process.env.NODE_ENV || 'development',
       database: 'connected',
       platform: 'Upsun',
-      tables: dbStatus.tables,
       stats: {
-        users: dbStatus.users || 0,
-        clients: dbStatus.clients || 0
+        users: parseInt(usersCount.rows[0].count),
+        clients: parseInt(clientsCount.rows[0].count),
+        notes: parseInt(notesCount.rows[0].count),
+        activities: parseInt(activitiesCount.rows[0].count)
       }
     });
   } catch (error) {
@@ -168,7 +194,10 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // Uvezi bcrypt dinamički
+    const { default: bcrypt } = await import('bcrypt');
     const validPassword = await bcrypt.compare(password, user.password_hash);
+    
     if (!validPassword) {
       console.log('❌ Password mismatch for:', email);
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -246,6 +275,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     // Hash password
     console.log('🔒 Hashing password...');
+    const { default: bcrypt } = await import('bcrypt');
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
@@ -295,10 +325,6 @@ app.post('/api/auth/register', async (req, res) => {
     
     if (error.code === '23505') {
       return res.status(400).json({ error: 'User with this email or username already exists' });
-    }
-    
-    if (error.code === '23502') {
-      return res.status(400).json({ error: 'Required field is missing' });
     }
     
     res.status(500).json({ 
@@ -677,22 +703,23 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
 
-// Start server
+// Start server s automatskom database inicijalizacijom
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 CRM Backend running on port: ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🏠 Host: 0.0.0.0`);
   console.log(`🔗 API URL: http://localhost:${PORT}/api`);
   console.log(`🔐 JWT Secret: ${JWT_SECRET === 'your_jwt_secret_key_here_change_in_production' ? 'DEFAULT (change in production!)' : 'CUSTOM'}`);
-  console.log(`📁 Current directory: ${process.cwd()}`);
-  console.log(`📁 Backend directory: ${__dirname}`);
   
-  // Provjeri database setup
-  const dbStatus = await checkDatabaseSetup();
-  if (dbStatus.allTablesExist) {
-    console.log('✅ Database is ready');
-    console.log('👤 Demo users available (see init.js for credentials)');
-  } else {
-    console.warn('⚠️ Database may not be properly initialized');
+  // Automatska database inicijalizacija
+  const dbReady = await initializeDatabaseOnStartup();
+  if (!dbReady) {
+    console.warn('⚠️ Database initialization failed - some features may not work');
   }
+  
+  console.log('🔐 Demo credentials:');
+  console.log('   admin@crm.com / password123 (admin)');
+  console.log('   ivan.horvat@primjer.hr / password123 (user)');
+  console.log('   ana.kovac@primjer.hr / password123 (user)');
+  console.log('   marko.petrov@primjer.hr / password123 (user)');
 });

@@ -15,21 +15,46 @@ applications:
           root: "frontend/dist"
           index: ["index.html"]
           passthru: true
+          expires: -1
+          allow: true
+          scripts: true
         "/assets":
           root: "frontend/dist/assets"
           expires: 1y
+          allow: true
         "/api":
           passthru: true
 
     hooks:
       build: |
-        cd frontend && npm install && npx vite build
-        cd ../backend && npm install && npm run init-db
+        set -e
+        
+        echo "🚀 Starting build process..."
+        
+        # FRONTEND BUILD
+        echo "📦 Building frontend..."
+        cd frontend
+        npm install
+        npx vite build
+        
+        if [ ! -f "dist/index.html" ]; then
+          echo "❌ Frontend build failed"
+          exit 1
+        fi
+        echo "✅ Frontend build successful"
+        
+        # BACKEND SETUP
+        echo "📦 Setting up backend..."
+        cd ../backend
+        npm install
+        
+        echo "🎉 Build completed! Database will auto-initialize on startup."
 
     variables:
       env:
         NODE_ENV: "production"
         PORT: 8888
+        JWT_SECRET: "your-very-secure-jwt-secret-key-change-this-in-production"
 
 services:
   postgresql:
